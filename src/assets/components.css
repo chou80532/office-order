@@ -1,0 +1,498 @@
+/* 全域共用元件樣式：跨面板重複的按鈕組收斂於此。
+   由 main.js 於 tokens.css 之後匯入，供各元件直接以 class 套用。
+   面板專屬按鈕（如 .btn-add、.btn-icon-only、.btn-generate）仍留在各自 SFC。 */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: var(--r-btn);
+  font-size: var(--text-label);
+  font-weight: 700;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: all 0.15s;
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-primary { background: var(--accent-solid); color: var(--paper); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+
+.btn-secondary { background: var(--bg-inset); color: var(--text-secondary); border-color: transparent; }
+.btn-secondary:hover:not(:disabled) { background: var(--border); color: var(--ink); }
+
+.btn-danger { background: var(--danger); color: var(--paper); }
+.btn-danger:hover:not(:disabled) { background: var(--danger-hover); }
+
+/* 全站搜尋欄共用點餐頁的圓角、聚焦光圈與微動畫。 */
+.app-search-shell, .app-search-input {
+  border-radius: 999px !important;
+  background: var(--input-bg) !important;
+  border-color: var(--input-border) !important;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease,
+    transform 150ms ease !important;
+}
+.app-search-shell:focus-within, .app-search-input:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--input-focus-ring) !important;
+  animation: app-search-focus 180ms ease-out;
+}
+.app-search-clear {
+  transition: background 150ms ease, color 150ms ease, opacity 150ms ease !important;
+}
+.app-search-clear:hover { opacity: 0.9; }
+.app-search-clear:active { opacity: 0.72; }
+@keyframes app-search-focus {
+  0% { transform: scale(0.992); }
+  100% { transform: scale(1); }
+}
+
+/* ── 頁面／面板切換轉場（App.vue RouterView 與 SettingsView 分頁共用）──
+   離場：淡出並上移 8px（220ms）；進場：自下方 8px 淡入回位（260ms）。
+   只動 opacity / transform（不觸發 reflow）；will-change 僅存在於 *-active
+   class 期間，動畫結束 Vue 移除 class 即自動解除，不會長期佔用合成層。 */
+.page-enter-active {
+  transition:
+    opacity 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.page-leave-active {
+  transition:
+    opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.page-enter-from { opacity: 0; transform: translate3d(0, 8px, 0); }
+.page-leave-to { opacity: 0; transform: translate3d(0, -8px, 0); }
+
+/* 手機：位移幅度縮小，避免拖慢與暈動感 */
+@media (max-width: 768px) {
+  .page-enter-from { transform: translate3d(0, 6px, 0); }
+  .page-leave-to { transform: translate3d(0, -6px, 0); }
+}
+
+/* 減少動態偏好：取消位移，改為極短淡入淡出 */
+@media (prefers-reduced-motion: reduce) {
+  .page-enter-active, .page-leave-active { transition: opacity 80ms ease; will-change: auto; }
+  .page-enter-from, .page-leave-to { transform: none; }
+}
+
+/* 切頁完成後程式會將焦點移至頁面根節點（無障礙）；此容器層級不顯示焦點外框 */
+[data-page-focus]:focus, [data-page-focus]:focus-visible { outline: none; }
+
+/* Shared paper typography, amounts and overlays, including teleported dialogs. */
+h1, h2, h3 { font-family: var(--font-display); font-weight: 700; }
+input, textarea, select { color: var(--ink); }
+:root .mono, :root [class$="-amount"], :root [class$="-price"], :root [class$="-value"] { font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
+/* 按鈕圓角是刻意比卡片小的一階，給它自己的 token，
+   不要讓 .btn 寫 var(--r-md) 卻被這裡的 4px 永遠蓋掉。 */
+/* 空狀態一律用 <StatusNotice>（色彩走語意 token，深淺底都對）。
+   原本這裡無條件給 .empty 系列套紙色底，在深色面板中會憑空出現一塊米白。
+   仍在用 .empty-state 的只剩 DashboardView 的「補點」區塊，維持其原樣。 */
+:root .empty-state { color: var(--ink-faint); background: var(--paper); }
+.ops-surface {
+  --bg-surface: var(--ink-2);
+  --bg-body: var(--ink);
+  --bg-input: var(--ink-2);
+  --bg-elevated: var(--ink-3);
+  --bg-glass-2: var(--ink-2);
+  --text-main: var(--paper);
+  --bg-page: var(--ink);
+  --bg-card: var(--ink-2);
+  --bg-panel: var(--ink-2);
+  --bg-inset: var(--ink-3);
+  --text-primary: var(--paper);
+  --text-secondary: var(--ink-soft);
+  --text-muted: var(--ink-soft);
+  --muted: var(--ink-soft);
+  --border: var(--line);
+  --border-strong: color-mix(in srgb, var(--paper) 24%, transparent);
+  --muted-line: color-mix(in srgb, var(--paper) 24%, transparent);
+  --muted-line2: var(--line);
+  --input-bg: var(--ink-2);
+  --input-border: color-mix(in srgb, var(--paper) 28%, transparent);
+  --bg-accent: var(--ink-3);
+  --bg-success: var(--ink-3);
+  --bg-danger: var(--ink-3);
+  --bg-highlight: var(--ink-3);
+  --text-accent: var(--paper);
+  --text-success: var(--paper);
+  --text-danger: var(--paper-2);
+  --text-highlight: var(--paper);
+  --selection-soft: var(--ink-3);
+  --admin-bg: var(--ink-3);
+  --admin-text: var(--paper);
+  --admin-border: var(--line);
+  /* 兩種餐別在深底上原本都是 --ink-soft，等於沒有分別，所以店家管理
+     自己硬寫了 #e09a7e / #9ec0a6 兩個 hex 繞過去。直接在這裡給它們
+     真正的色相，元件就不必再脫離色系自己調。 */
+  --tag-lunch-bg: var(--ink-3);
+  --tag-lunch-text: var(--persimmon-light);
+  --tag-drink-bg: var(--ink-3);
+  --tag-drink-text: var(--jade-light);
+  color: var(--text-primary);
+  background: var(--ink);
+}
+.ops-surface :where(input, select, textarea) { color: var(--text-primary); }
+.ops-surface :where(h2, h3, h4) { font-family: var(--font-display); font-weight: 600; }
+.ops-surface .btn-secondary:hover { color: var(--paper); }
+
+/* Reusable summary: a single paper surface; individual metrics are unboxed. */
+:root .summary-strip.summary-strip {
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-faint);
+  --text-muted: var(--ink-faint);
+  --muted: var(--ink-faint);
+  --bg-card: var(--paper);
+  --bg-inset: var(--paper-2);
+  --text-success: var(--jade);
+  --text-highlight: var(--persimmon-dark);
+  /* .ops-surface 把這兩個改成米白（給深底用），但這條是紙卡。
+     少了這兩行，紙卡上的「餘額偏低」「已收／取消」就是米白字寫在米白紙上。 */
+  --text-danger: var(--persimmon-dark);
+  --cash-color: var(--jade);
+  --text-accent: var(--persimmon-dark);
+  --summary-divider: color-mix(in srgb, var(--ink) 15%, transparent);
+  background: var(--paper);
+  color: var(--ink);
+  border: 0;
+  border-radius: 6px;
+  box-shadow: none;
+  gap: 0;
+  overflow: hidden;
+}
+:root .summary-strip > .summary-cell {
+  min-width: 0;
+  padding: 20px;
+  background: transparent;
+  color: var(--ink);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+:root .summary-strip > .summary-cell + .summary-cell { border-left: 1px solid var(--summary-divider); }
+:root .summary-strip .kpi-icon { width: 32px; height: 32px; border-radius: 4px; background: transparent; color: var(--gold-deep); font-size: var(--text-lead); }
+:root .summary-strip .kpi-icon.is-people, :root .summary-strip .kpi-icon.is-highlight { color: var(--jade); }
+:root .summary-strip .kpi-icon.is-pending { color: var(--persimmon); }
+:root .summary-strip :is(.kpi-num, .rk-value, .wkpi-value, .ckpi-value) { font-family: var(--font-sans); color: var(--ink); font-size: var(--text-display); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.25; }
+:root .summary-strip :is(.kpi-label, .rk-label, .wkpi-label, .ckpi-label, .wkpi-sub, .ckpi-sub) { color: var(--ink-faint); font-weight: 400; }
+:root .summary-strip .summary-money { color: var(--jade); }
+:root .summary-strip .summary-debit { color: var(--persimmon-dark); }
+:root .summary-strip.summary-success { border-top: 3px solid var(--jade); }
+
+/* 上面那幾條 :root .summary-strip（0,3,0）比元件的 scoped 樣式（0,2,0）高，
+   所以元件裡寫的襯線字體、800 字重、強調色、手機縮字全部畫不出來。
+   與其讓五個元件各自想辦法贏過去（那只會長出一堆 .x.x 疊 class 的寫法），
+   不如把「哪一格要被強調」的語彙收在這裡，元件只要掛 class 就好。 */
+:root .summary-strip .summary-cell.is-primary :is(.kpi-num, .rk-value, .wkpi-value, .ckpi-value) {
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+:root .summary-strip :is(.kpi-num-highlight, .wkpi-debit, .ckpi-pending .ckpi-value) { color: var(--persimmon-dark); }
+:root .summary-strip .ckpi-green { color: var(--jade); }
+
+/* 手機上 28px 配合元件的 text-overflow:ellipsis，四位數金額會被切掉。
+   縮字規則原本寫在各元件的 scoped media query 裡，同樣贏不過上面那幾條。 */
+@media (max-width: 768px) {
+  :root .summary-strip > .summary-cell { padding: 16px 12px; }
+  :root .summary-strip :is(.kpi-num, .rk-value, .wkpi-value, .ckpi-value) { font-size: var(--text-title); }
+}
+@media (max-width: 768px) {
+  :root .summary-strip > .summary-cell { padding: 16px 12px; }
+  :root .summary-strip.summary-four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :root .summary-four > .summary-cell:nth-child(3) { border-left: 0; }
+  :root .summary-four > .summary-cell:nth-child(n+3) { border-top: 1px solid var(--summary-divider); }
+  :root .summary-strip.summary-three { grid-template-columns: 1fr; }
+  :root .summary-three > .summary-cell + .summary-cell { border-left: 0; border-top: 1px solid var(--summary-divider); }
+}
+
+/* ── 訂單明細列：今日訂單與歷史訂單共用 ────────────────────────────
+   元件為 order/OrderRow.vue 與 order/OrderRowHead.vue。欄寬、字級、分隔線與
+   金額色都定義在這裡，標題列與內容列讀同一組變數，因此必定對齊，也不會再
+   像先前那樣兩邊各寫一份而慢慢漂開。
+
+   各表唯一需要覆寫的是 --or-col-act：今日訂單右側最多四顆操作鈕，歷史訂單
+   只有一顆 +1。把它固定下來，同一張表裡不同權限的列才會共用同一條金額基線。 */
+.order-rows {
+  --or-gap: 12px;
+  --or-pad-x: 18px;
+  --or-avatar: 40px;
+  --or-col-person: 150px;
+  --or-col-time: 46px;
+  --or-col-money: 76px;
+  --or-col-act: 44px;
+}
+
+.order-row, .order-row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--or-gap);
+  padding: 12px var(--or-pad-x);
+  /* 虛線分隔是菜單紙的語彙，兩張表一致 */
+  border-bottom: 1px dashed var(--ink-faint);
+}
+.order-row:last-child { border-bottom: none; }
+
+.order-row-head {
+  padding-block: 9px;
+  font-size: var(--text-label);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--ink-faint);
+}
+
+/* 欄位 */
+.order-rows .or-person {
+  width: var(--or-col-person);
+  flex-shrink: 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--or-gap);
+}
+.order-rows .or-meal { flex: 1; min-width: 0; }
+.order-rows .or-time { width: var(--or-col-time); flex-shrink: 0; }
+.order-rows .or-money { min-width: var(--or-col-money); flex-shrink: 0; text-align: right; }
+.order-rows .or-actions {
+  min-width: var(--or-col-act);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+/* 內容 */
+.or-avatar {
+  width: var(--or-avatar);
+  height: var(--or-avatar);
+  flex-shrink: 0;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: var(--text-lead);
+  font-weight: 700;
+  color: var(--paper);
+}
+.or-name {
+  min-width: 0;
+  color: var(--ink);
+  font-size: var(--text-lead);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.or-self {
+  margin-left: 4px;
+  font-style: normal;
+  font-size: var(--text-micro);
+  font-weight: 700;
+  color: var(--tag-dinner-text);
+}
+.or-dish {
+  display: block;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: var(--text-lead);
+  font-weight: 700;
+}
+.or-note {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink-faint);
+  font-size: var(--text-body);
+  font-weight: 400;
+  line-height: 1.45;
+}
+.order-rows .or-time {
+  color: var(--ink-faint);
+  font-size: var(--text-label);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 金額預設是襯線墨色；朱紅保留給免費／異常，不當預設色使用。
+   類名刻意避開上方 [class$="-price"] / [class$="-amount"] 的全域無襯線規則。 */
+.order-rows .or-money {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: var(--text-lead);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.order-row.free .or-money { color: var(--persimmon-dark); text-decoration: line-through; }
+.order-row.free .or-dish, .order-row.free .or-name { color: var(--ink-faint); }
+
+/* 狀態旗標（免費／異常）：朱紅在這裡才有意義 */
+.or-flag {
+  display: block;
+  width: max-content;
+  margin: 3px 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid var(--persimmon-dark);
+  border-radius: 3px;
+  color: var(--persimmon-dark);
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+}
+
+.order-row.is-self { background: color-mix(in srgb, var(--tag-dinner-text) 7%, transparent); }
+
+/* 平板與手機：列改兩行堆疊，時間欄與標題列收起。
+   斷點是 1100 不是 768 —— 今日訂單的操作欄是 220px，整列最小 576px，
+   而 Dashboard 主欄在 1100px 以下就小於這個數。原本只在 768px 以下換行，
+   中間那段會被 .table-card 的 overflow:hidden 直接裁掉，右側操作鈕點不到。 */
+@media (max-width: 1100px) {
+  .order-rows { --or-pad-x: 14px; }
+  .order-row { flex-wrap: wrap; row-gap: 6px; padding-block: 11px; }
+  .order-row-head { display: none; }
+  .order-rows .or-person { width: auto; max-width: 48%; }
+  .order-rows .or-meal {
+    flex-basis: 100%;
+    order: 5;
+    padding-left: calc(var(--or-avatar) + var(--or-gap));
+  }
+  .order-rows .or-time { display: none; }
+  .order-rows .or-money { margin-left: auto; }
+  .order-rows .or-actions { order: 6; margin-left: auto; min-width: 0; }
+}
+
+/* 列上的操作鈕：兩張表共用的基底與「+1」樣式。
+   今日訂單獨有的免費／編輯／刪除變體留在該元件內。 */
+.order-rows .row-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 6px 11px;
+  border-radius: var(--r-sm);
+  font-size: var(--text-label);
+  font-weight: 900;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.order-rows .row-btn.copy { background: var(--selection-soft); color: var(--selection); }
+.order-rows .row-btn.copy:hover { background: var(--accent-solid); color: var(--text-on-accent); }
+
+/* ════════════════════════════════════════════════════════════════
+   深色區塊的語意綠
+   --jade 在深色面板上只有 2.74，但它同時也是紙卡上的成功色（5.13），
+   一個值沒辦法兩邊都過。所以只有「整塊都是深色」的容器把語意綠換成淺階。
+
+   只調整深底上的文字語意色；按鈕填色 --mint 維持深綠，搭配米白文字。
+   --muted 由 .ops-surface 與 .summary-strip 各自管理。權重用 :where() 維持 0。
+   ════════════════════════════════════════════════════════════════ */
+:where(.app-loading, .bar-track, .brand-panel, .cart-col, .category-count, .category-tab,
+  .category-tabs, .category-toolbar, .center-col, .cleanup-panel, .content-body, .count-badge,
+  .fab-count, .log-cards, .log-list, .log-table-wrap, .login-page, .member-avatar,
+  .member-grid, .member-list-container, .menu-preview-body, .meter, .mob-more-sheet, .mobile-bottom-nav,
+  .nav-sidebar, .nav-tooltip, .note-rows, .ops-surface, .page, .panel-toolbar,
+  .pay-table, .person-group, .personal-order-status, .preview-grid, .ranking-track, .record-table,
+  .result-summary, .settings-page, .shell, .sme-image-pane, .stats-panel, .store-avatar,
+  .store-grid, .store-group-count, .store-item, .store-mgr-panel, .table-wrap, .top-storebar,
+  .user-action-btn, .wallet-panel) {
+  --text-success: var(--jade-light);
+  --text-highlight: var(--jade-light);
+  --cash-color: var(--jade-light);
+  --wallet-credit-color: var(--jade-light);
+  --wallet-refund-color: var(--jade-light);
+}
+/* 日期工具列的次要操作，桌面標題列與行動版共用。 */
+.toolbar-secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid var(--paper-line);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.toolbar-secondary-btn:hover:not(:disabled) {
+  background: var(--paper-2);
+  border-color: var(--border-strong);
+}
+.toolbar-secondary-btn:active:not(:disabled) { background: var(--paper-line); }
+.toolbar-secondary-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toolbar-secondary-btn:disabled { opacity: .5; cursor: not-allowed; }
+/* ── 觸控裝置的可點範圍 ──────────────────────────────────────────
+   一堆圖示鈕是 22–34px。WCAG 2.2 AA 的門檻是 24×24，Apple 建議 44×44。
+   直接放大會動到版面，所以改用 ::after 疊一層透明的可點區：視覺尺寸
+   一個 px 都不變，只有手指碰得到的範圍變大。桌機（pointer: fine）完全不套。
+
+   分兩組是因為方向會咬到鄰居：
+   - 橫排的圖示鈕（編輯／刪除並排）只撐高。橫向撐開會讓相鄰兩顆重疊，
+     反而更容易點到旁邊那顆刪除鈕。
+   - 孤立的關閉／清除鈕四面都撐。 */
+@media (pointer: coarse) {
+  :where(.unbind-btn, .regen-btn, .sme-btn-del-row, .row-icon-btn,
+         .cancel-icon-btn, .more-btn, .order-rows .row-btn, .del-btn,
+         .search-clear, .menu-preview-close, .wm-close) {
+    position: relative;
+  }
+  :where(.unbind-btn, .regen-btn, .sme-btn-del-row, .row-icon-btn,
+         .cancel-icon-btn, .more-btn, .order-rows .row-btn, .del-btn)::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: max(100%, 44px);
+    transform: translateY(-50%);
+  }
+  :where(.search-clear, .header-search-clear, .menu-preview-close, .wm-close)::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+}
+/* 只給螢幕閱讀器看的文字。用於那些「視覺上靠版面就看得懂、但語意上缺一個標題」
+   的面板：加上真正的 <h2> 會多出一行字，用這個則是零視覺變化。 */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+/* ── 小型行內載入指示 ────────────────────────────────────────────
+   原本三個元件各寫一份（14px/paper、14px/paper、15px/currentColor），
+   @keyframes spin 更是重複了六次。收成一份，並統一採用 currentColor 的寫法：
+   spinner 自動跟著所在位置的文字顏色走，深底淺底都不必再開 .dark 變體。 */
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.mini-spinner {
+  display: inline-block;
+  width: 15px; height: 15px;
+  border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.mini-spinner-sm { width: 12px; height: 12px; border-width: 1.5px; }
+@media (prefers-reduced-motion: reduce) { .mini-spinner { animation: none; } }

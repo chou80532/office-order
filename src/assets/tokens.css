@@ -1,0 +1,267 @@
+/* Menu board / receipt palette. Semantic aliases preserve existing component contracts. */
+:root {
+  color-scheme: light;
+  --ink: #211a14;
+  --ink-2: #2b2119;
+  --ink-3: #362a1f;
+  --paper: #f3e7d2;
+  --paper-2: #ecdbbd;
+  --persimmon: #c4502d;
+  --persimmon-dark: #a1401f;
+  --jade: #45684f;
+  --gold: #c99a3d;
+  --gold-dark: #a87c26;
+  --ink-soft: #b3a48e;
+  --ink-faint: #6d5f4c;  /* 紙卡 5.06、--paper-2 上 4.55（原 #7d6f5c 只有 3.99，是全站次要文字色） */
+  /* 同一個顏色沒辦法同時在紙卡（#f3e7d2）和深色面板（#211a14）上達到 AA，
+     所以會跨兩種底色出現的角色各留一個變體，用哪個看元件坐在哪一面。 */
+  --ink-mute: #6c5e4d;      /* 次要文字：紙卡 5.13、--paper-2 上 4.61（原 #746655 在 --paper-2 上只有 4.09） */
+  --paper-line: #c3b49b;    /* 真正畫得出來的邊框，與 --paper-2 底色脫鉤 */
+  --paper-3: #f6ddc6;       /* 提示／警示的淺底，與 --bg-inset 分得開 */
+  --paper-danger: #f7d8ca;  /* 錯誤／失效的淺底，與上面的警示底再分一階 */
+  --jade-light: #829b81;    /* 深底上的綠：對 --ink 5.69、--ink-3 4.61（原 #7c957b 在 --ink-3 上只有 4.27） */
+  --gold-deep: #7a5b20;     /* 紙卡上的金／警示：對紙卡 5.13、對標籤底 4.61（--gold 只有 2.10） */
+  --plum: #6b4a7a;          /* 餐別標籤需要的第四個色相 */
+  --persimmon-light: #e0805f; /* 深底上的柿紅：對 --ink 6.44（--persimmon 只有 3.21）。
+                                 原本散在元件裡的 #e0947a、#e09a7e 都是手調這一階。 */
+  --line: rgb(243 231 210 / 18%);   /* 12% 在深色列上幾乎看不見，列與列分不開 */
+  --bg-page: var(--paper-2);
+  --bg-card: var(--paper);
+  --bg-panel: var(--paper);
+  --bg-inset: var(--paper-2);
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-mute);
+  --text-muted: var(--ink-mute);
+  --border: var(--paper-line);
+  --border-strong: var(--ink-faint);
+  /* --accent 是線條／標記用的亮階；任何「填滿底色再放淺色字」的表面改用
+     --accent-solid，白字對比 3.79 → 5.25。 */
+  --accent: var(--persimmon);
+  --accent-solid: var(--persimmon-dark);
+  --accent-hover: var(--persimmon-dark);
+  --text-on-accent: var(--paper);
+  --text-on-success: var(--paper);
+  --text-on-highlight: var(--paper);
+  --image-viewer-bg: var(--ink);
+  --bg-accent: var(--paper-2);
+  --text-accent: var(--persimmon-dark);
+  --border-accent: var(--persimmon);
+  --success: var(--jade);
+  --success-hover: var(--jade);
+  --bg-success: var(--paper-2);
+  --text-success: var(--jade);
+  --danger: var(--persimmon-dark);
+  --danger-hover: var(--persimmon-dark);
+  --bg-danger: var(--paper-danger);
+  --text-danger: var(--persimmon-dark);
+  --highlight: var(--jade);
+  --bg-highlight: var(--paper-3);
+  --text-highlight: var(--jade);
+  --input-bg: var(--paper);
+  --input-border: var(--ink-faint);
+  --image-control-icon: var(--paper);
+  --category-marker: var(--persimmon);
+  --admin-bg: var(--paper-2);
+  --admin-text: var(--persimmon-dark);
+  --admin-border: var(--persimmon);
+  --wallet-credit-color: var(--jade);
+  --wallet-debit-color: var(--persimmon-dark);
+  --wallet-refund-color: var(--jade);
+  --wallet-adjust-color: var(--ink-faint);
+  --wallet-net-color: var(--persimmon-dark);
+  --cash-color: var(--jade);
+  --sidebar-bg: var(--ink-2);
+  --sidebar-text: var(--ink-soft);
+  --sidebar-text-active: var(--paper);
+  --sidebar-bg-active: var(--accent-solid);
+  --sidebar-border: var(--line);
+  --sidebar-fg: var(--paper);
+  --cream: var(--paper-2);
+  --paprika: var(--persimmon-dark);
+  --paprika-soft: var(--paper-2);
+  --mint: var(--jade);
+  --mint-soft: var(--paper-2);
+  --selection: var(--persimmon);
+  --selection-soft: var(--paper-2);
+  --success-soft: var(--paper-2);
+  --danger-soft: var(--paper-2);
+  --warning: var(--gold-deep);
+  --text-warning: var(--gold-deep);
+  --bg-warning: var(--paper-3);
+  --muted: var(--ink-mute);
+  --muted-line: var(--ink-faint);
+  --muted-line2: var(--paper-line);
+  /* 排名徽章只出現在深色的統計面板上（色票 14% 當底），所以三個都取深底值。
+     原本用紙卡值：rank-1 只有 2.42、rank-2 2.45、rank-3 2.71，三色實際上分不出來。 */
+  --rank-1: var(--persimmon-light);  /* 4.90 */
+  --rank-2: var(--jade-light);       /* 4.62 */
+  --rank-3: var(--ink-soft);         /* 5.55 */
+  --rank-other: #a3937c;
+  /* 四個餐別原本共用同一個綠，畫出來完全分不出來；色相各給一個，
+     全部維持在紙卡上 4.1 以上。 */
+  --tag-breakfast-bg: var(--paper-2);
+  --tag-breakfast-text: var(--gold-deep);
+  --tag-lunch-bg: var(--paper-2);
+  --tag-lunch-text: var(--persimmon-dark);
+  --tag-dinner-bg: var(--paper-2);
+  --tag-dinner-text: var(--plum);
+  --tag-drink-bg: var(--paper-2);
+  --tag-drink-text: var(--jade);
+  --font-sans: 'Noto Sans TC', system-ui, sans-serif;
+  --font-display: 'Noto Serif TC', serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, 'Noto Sans TC', monospace;
+  --overlay: color-mix(in srgb, var(--ink) 65%, transparent);
+  --image-control-bg: var(--overlay);
+  --input-focus-ring: color-mix(in srgb, var(--persimmon) 28%, transparent);
+  --cash-soft: var(--paper-2);
+  --shadow-soft: 0 4px 16px color-mix(in srgb, var(--ink) 18%, transparent);
+  --shadow-card: 0 2px 0 color-mix(in srgb, var(--ink) 25%, transparent);
+  --shadow-panel: var(--shadow-soft);
+  --shadow-modal: 0 20px 60px color-mix(in srgb, var(--ink) 45%, transparent);
+  --accent-gradient: linear-gradient(var(--persimmon), var(--persimmon));
+  /* 這裡原本還有 4 個 *-glow 與 3 個 *-gradient，全部是 --shadow-card 或單色
+     「漸層」的別名，而且全站零引用。留著只會讓人以為系統有這些階層。 */
+  /* 主要文字字級刻度：依語意挑選，不要在元件內自行寫死 px。
+     --text-hero 是錢包餘額等展示數字的特殊尺寸；pointer:coarse 的 16px
+     則是為了避免 iOS 輸入框自動放大，兩者都保留為明確例外。 */
+  /* 間距刻度。原本只有 --card-pad 與 --page-pad 兩個點，中間全靠元件各寫各的，
+     padding 與 gap 累積出 39 個相異數值（6/7/8/9/10/11/12/13/14 九個相鄰值同時在用），
+     相鄰元件的基線因此對不齊。新寫的版面一律從這六階挑，存量逐步收斂。 */
+  --r-btn: 4px;    /* 按鈕圓角：刻意比卡片小一階 */
+
+  --sp-1: 4px;     /* 圖示與文字之間 */
+  --sp-2: 8px;     /* 同一組內的元素 */
+  --sp-3: 12px;    /* 列內欄距、小卡內距 */
+  --sp-4: 16px;    /* 卡片內距，等同 --card-pad */
+  --sp-5: 24px;    /* 區塊之間 */
+  --sp-6: 40px;    /* 頁面級留白，等同 --page-pad */
+
+  --text-micro: 12px;    /* 徽章、角標、極小標籤（原 11px，上線前調高以確保可讀性） */
+  --text-label: 13px;    /* 欄位名、標籤、輔助說明（原 12px，同步上調以維持與 micro 的級距） */
+  --text-body: 14px;     /* 內文預設 */
+  --text-lead: 16px;     /* 強調內文：人名、餐點名、卡片標題 */
+  --text-title: 20px;    /* 區塊標題、頁面標題 */
+  --text-display: 28px;  /* 大數字：KPI、統計 */
+  --text-hero: 32px;     /* 錢包餘額等頁面主視覺數字 */
+
+  /* 全站頁面容器：標題列與內容區共用，確保各頁左右邊界一致。
+     版面走滿版（點餐、歷史訂單等三欄頁本來就是滿版），需要收窄時改這個值即可。 */
+  --page-pad: 28px;       /* 無 Shell 頁面的預設值；功能頁由 .shell 統一為 40px */
+  --page-max: 100%;
+  --card-pad: 16px;
+  --header-height: 64px;
+
+  --r-sm: 8px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 12px;
+
+  --mobile-nav-height: calc(60px + env(safe-area-inset-bottom, 0px));
+
+  /* 疊放層級：原本從 1 一路散到 9999，彈窗（1000）還比手機側欄抽屜（9100）低，
+     抽屜開著時開彈窗會被蓋住。整理成五階，都高於各元件內部自用的層級（最高 400），
+     所以元件內的相對順序不受影響。新的浮層一律從這裡挑，不要再自己寫數字。 */
+  --z-drawer: 600;    /* 手機側欄、底部更多選單 */
+  --z-modal: 700;     /* 一般彈窗：菜單預覽、智慧菜單、錢包、今日店家 */
+  --z-popover: 800;   /* 彈窗內的日期／下拉浮層，要蓋在彈窗上 */
+  --z-dialog: 900;    /* 二次確認，永遠在彈窗之上 */
+  --z-toast: 1000;    /* 最上層 */
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Keep the layout viewport stable when dialogs hide the root scrollbar.
+   Browser-managed gutters retain fractional pixels at non-default zoom. */
+html { scrollbar-gutter: stable; }
+
+/* 手機縮小頁面左右邊距（標題列與內容同步縮） */
+@media (max-width: 768px) {
+  :root { --page-pad: 16px; }
+}
+
+html, body {
+  background: var(--ink);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font: inherit;
+}
+
+input, textarea, select {
+  font: inherit;
+}
+
+/* iOS Safari 在 focus 字級小於 16px 的輸入框時會自動放大整頁，而且失焦後不會縮回，
+   使用者就停在放大、可左右捲動的畫面上。觸控裝置一律拉到 16px 消除這個行為；
+   桌機（pointer: fine）維持原本以 --text-* 設計的密度不變。
+   需要 !important 是因為各元件的 scoped 樣式（.foo[data-v-x]）specificity 高於此處的元素選擇器。 */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']), textarea, select {
+    font-size: 16px !important;
+  }
+}
+
+/* 全站統一的鍵盤焦點樣式：滑鼠點擊不顯示，鍵盤操作時清楚可見 */
+:where(button, a, input, textarea, select, summary, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--bg-accent);
+  color: var(--text-accent);
+}
+
+/* 捲軸。Chrome 121 之後的規則是：一旦元素設了 scrollbar-width 或 scrollbar-color，
+   ::-webkit-scrollbar 那一整套就會被忽略。專案裡有好幾處寫了 scrollbar-width: thin
+   卻沒寫 scrollbar-color，結果自訂樣式全被關掉、退回系統原生捲軸 —— 在深色工具列上
+   就是一條很亮的淺灰條加上下箭頭。
+   這裡把標準屬性補在 :root（會繼承下去），各處只要再寫 scrollbar-width 也不會破功。
+   下面的 -webkit- 那組保留給還不支援 scrollbar-color 的舊 Safari。 */
+* { scrollbar-color: var(--border-strong) transparent; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 20px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track { background: transparent; }
+
+.app-resuming *, .app-resuming *::before, .app-resuming *::after, .theme-switching *, .theme-switching *::before, .theme-switching *::after {
+  transition: none !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

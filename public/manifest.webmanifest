@@ -1,0 +1,18 @@
+{
+  "name": "Office Lunch",
+  "short_name": "Office Lunch",
+  "description": "Self-hosted office group ordering for small teams.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f6f8",
+  "theme_color": "#17243b",
+  "icons": [
+    {
+      "src": "/office-lunch.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

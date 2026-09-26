@@ -1,0 +1,42 @@
+{
+  "name": "office-lunch",
+  "version": "1.0.0",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "lint:styles": "node scripts/prune-overridden-styles.cjs",
+    "test": "vitest run",
+    "test:rules": "firebase emulators:exec --project demo-office-lunch --only firestore \"node --test rules-tests/firestore.rules.emulator.mjs\"",
+    "test:functions:emulator": "firebase emulators:exec --project demo-office-lunch --only auth,firestore,functions \"node --test rules-tests/functions.emulator.mjs\"",
+    "verify:functions": "node --check functions/index.js && node scripts/verify-functions-contract.cjs && vite build",
+    "emulators": "firebase emulators:start --project demo-office-lunch --only auth,firestore,storage,functions,hosting",
+    "seed:demo": "node functions/seedEmulatorAdmin.cjs"
+  },
+  "dependencies": {
+    "canvas-confetti": "^1.9.4",
+    "exceljs": "^4.4.0",
+    "firebase": "^12.12.1",
+    "vue": "^3.5.32",
+    "vue-router": "^5.0.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "@vitejs/plugin-vue": "^6.0.6",
+    "eslint": "^10.6.0",
+    "eslint-plugin-vue": "^10.9.2",
+    "globals": "^17.7.0",
+    "vite": "^8.0.8",
+    "vite-plugin-vue-devtools": "^8.1.1",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "description": "Self-hosted office group ordering for small teams."
+}

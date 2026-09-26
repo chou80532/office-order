@@ -1,0 +1,135 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 虛擬錢包 wallets
+    match /wallets/{walletId} {
+      allow read: if isRegistered()
+        && (isAdmin()
+          || request.auth.uid == walletId
+          || resource.data.ownerUid == request.auth.uid);
+
+      // 餘額只能由 Cloud Functions（Admin SDK）異動。
+      allow create, update, delete: if false;
+    }
+
+    // 錢包交易紀錄 wallet_logs
+    match /wallet_logs/{logId} {
+      allow read: if isRegistered()
+        && (isAdmin()
+          || resource.data.ownerUid == request.auth.uid
+          || resource.data.walletId == request.auth.uid);
+
+      // 流水只能由 Cloud Functions 建立或刪除。
+      allow create, update, delete: if false;
+    }
+
+    // 現金應收
+    match /cash_payments/{paymentId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // 現金流水
+    match /cash_payment_logs/{logId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+    // 防重複送單紀錄 wallet_requests
+    match /wallet_requests/{requestId} {
+      allow read: if isRegistered()
+        && (isAdmin() || requestId.matches(request.auth.uid + '_.*'));
+      allow create, update, delete: if false;
+    }
+
+    // 輔助函式：判斷是否為管理員
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    function isLoggedIn() {
+      return request.auth != null;
+    }
+
+    function isRegistered() {
+      return isLoggedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    // ==========================================
+    //  訂單 orders
+    // ==========================================
+    match /orders/{docId} {
+      allow read: if isRegistered();
+
+      // 建單、編輯、退款與刪除都必須經過 Cloud Functions 的帳務交易。
+      allow create, update, delete: if false;
+    }
+
+    match /dining_days/{date} {
+      allow read: if isRegistered();
+      allow create, update, delete: if false;
+    }
+
+    // ==========================================
+    //  邀請碼 inviteCodes (新系統專用，可維持嚴格)
+    // ==========================================
+    match /inviteCodes/{codeId} {
+      allow read, create, update, delete: if isAdmin();
+    }
+
+    // ==========================================
+    //  使用者資料 users (新系統專用，可維持嚴格)
+    // ==========================================
+    match /users/{userId} {
+      allow read: if isRegistered()
+        && (isAdmin() || request.auth.uid == userId);
+      allow create: if false;
+      allow update: if isRegistered()
+        && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLoginAt']);
+      allow delete: if false;
+    }
+
+    match /member_name_keys/{keyId} {
+      allow read, create, update, delete: if false;
+    }
+
+    // 代訂公開名單：只含姓名與 uid，供全體已註冊成員挑選代訂對象。
+    // 不含 email／isAdmin，避免外流敏感欄位；內容一律由 Cloud Functions 維護。
+    match /member_roster/{uid} {
+      allow read: if isRegistered();
+      allow create, update, delete: if false;
+    }
+
+    // ==========================================
+    // 以下集合供已註冊使用者載入；寫入權限依資料敏感度分級。
+    // ==========================================
+
+    // 菜單圖片 menu_images
+    match /menu_images/{docId} {
+      allow read: if isRegistered();
+      // 菜單價格是訂單編輯時的後端驗價依據，只能由管理員維護。
+      allow write: if isAdmin();
+    }
+
+    // Active/free store settings affect server-side order totals, so only admins may change them.
+    match /settings/daily {
+      allow read: if isRegistered();
+      allow write: if isAdmin();
+    }
+
+    // 其他系統設定仍限管理員修改
+    match /settings/{docId} {
+      allow read: if isRegistered();
+      allow write: if isAdmin();
+    }
+
+    // 投票功能已移除，舊資料一律禁止存取。
+    match /dish_reactions/{docId} {
+      allow read, write: if false;
+    }
+  }
+}

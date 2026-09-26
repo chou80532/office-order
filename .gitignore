@@ -1,0 +1,51 @@
+# Local configuration and generated output
+.env
+.env.*
+!.env.example
+node_modules/
+**/node_modules/
+dist/
+coverage/
+.vite/
+.firebase/
+.local/
+.firebase-debug.log
+firebase-debug.log*
+firestore-debug.log*
+*.log
+
+# Local editor and assistant state
+.vscode/
+.claude/
+.codex/
+.agents/
+
+# Credentials and private key material
+*.pem
+*.key
+*.p12
+*.pfx
+service-account*.json
+serviceAccount*.json
+firebase-service-account*.json
+.runtimeconfig.json
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Local audit files contain workstation paths and private-source notes
+OPEN_SOURCE_AUDIT.md
+OPEN_SOURCE_READINESS_REPORT.md
+OPENAI_APPLICATION_DRAFT.md
+
+# Local package cache and install scratch data
+.npm-cache/
+.npm-logs/
+.tmp/
+
+# Internal readiness and review reports
+GIT_HISTORY_CLEANUP.md
+SECURITY_REVIEW.md
+DEPENDENCY_REVIEW.md
+RELEASE_NOTES_v1.0.0.md
