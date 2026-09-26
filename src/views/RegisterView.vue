@@ -66,7 +66,7 @@ async function handleRegister() {
     <div class="login-card">
       <div class="login-brand">
         <img class="brand-mark" src="/office-lunch.svg" alt="" />
-        <span class="brand-name">Office Lunch</span>
+        <span class="brand-name">Office Order</span>
       </div>
 
       <h1 class="login-title">使用邀請碼註冊</h1>

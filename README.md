@@ -1,6 +1,8 @@
-# Office Lunch
+# Office Order
 
-Office Lunch is a Traditional Chinese office group ordering system for small teams. You can deploy the web app and Cloud Functions to a Firebase project that you control. Firebase Authentication, Firestore, Cloud Storage and Cloud Functions provide the backend.
+Office Order is a Firebase-powered open-source group ordering system for small teams and offices. Use it to coordinate lunch, drinks, afternoon tea, group purchases, and other team orders. You can deploy the web app and Cloud Functions to a Firebase project that you control. Firebase Authentication, Firestore, Cloud Storage and Cloud Functions provide the backend.
+
+Repository: [chou80532/office-order](https://github.com/chou80532/office-order)
 
 The repository starts in local emulator mode. Its example configuration uses the reserved `demo-office-lunch` project and connects Auth, Firestore, Storage and Functions to localhost.
 
@@ -133,12 +135,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Never include real employee, customer, s
 
 ## Security
 
-See [SECURITY.md](SECURITY.md). Report security issues through a private GitHub Security Advisory after the repository is published.
+See [SECURITY.md](SECURITY.md). Report security issues through GitHub's private Security Advisory feature.
 
 ## License
 
-This project is distributed under the MIT License; see [LICENSE](LICENSE). **MANUAL CONFIRMATION REQUIRED:** Project owner must confirm they own or have permission to open-source the original application code and bundled assets before public release.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## Screenshots
 
-No screenshots are included because the private source screenshots have not been cleared for public use.
+No screenshots are currently included.

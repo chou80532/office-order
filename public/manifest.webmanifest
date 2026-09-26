@@ -1,7 +1,7 @@
 {
-  "name": "Office Lunch",
-  "short_name": "Office Lunch",
-  "description": "Self-hosted office group ordering for small teams.",
+  "name": "Office Order",
+  "short_name": "Office Order",
+  "description": "A Firebase-powered open-source group ordering system for small teams and offices.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

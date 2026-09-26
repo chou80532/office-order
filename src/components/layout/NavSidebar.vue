@@ -204,8 +204,8 @@ async function handleLogout() {
       <div class="sidebar-brand">
           <span class="brand-tile" aria-hidden="true"><img src="/office-lunch.svg" alt="" /></span>
         <span class="brand-text">
-          <span class="brand-name">Office Lunch</span>
-          <span class="brand-sub">辦公室揪團點餐</span>
+          <span class="brand-name">Office Order</span>
+          <span class="brand-sub">辦公室團體訂購</span>
         </span>
       </div>
 

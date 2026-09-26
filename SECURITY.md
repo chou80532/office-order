@@ -6,7 +6,7 @@ Security fixes are made on the current development branch. Published support win
 
 ## Reporting a vulnerability
 
-After the repository is public, use GitHub's private Security Advisory reporting flow. Do not open a public issue for an unpatched vulnerability. Include affected version or commit, impact, and reproduction steps using fictional data.
+Use GitHub's private Security Advisory reporting flow. Do not open a public issue for an unpatched vulnerability. Include affected version or commit, impact, and reproduction steps using fictional data.
 
 ## Deployment responsibilities
 

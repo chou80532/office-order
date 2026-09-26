@@ -122,7 +122,7 @@ async function handleReset() {
       <section class="brand-panel" aria-hidden="true">
         <div class="logo">
           <img class="logo-mark" src="/office-lunch.svg" alt="" />
-          <div class="logo-text">Office Lunch <span>/ Group Ordering</span></div>
+          <div class="logo-text">Office Order <span>/ Group Ordering</span></div>
         </div>
 
         <div class="scene">
@@ -224,7 +224,7 @@ async function handleReset() {
           <p class="register-link">沒有帳號？ <RouterLink to="/register">使用邀請碼註冊</RouterLink></p>
         </div>
 
-        <div class="small-foot">Office Lunch · Self-hosted for your team</div>
+        <div class="small-foot">Office Order · Self-hosted for your team</div>
       </section>
     </div>
   </div>

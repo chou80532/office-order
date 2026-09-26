@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for considering a contribution to Office Lunch.
+Thanks for considering a contribution to Office Order.
 
 ## Before opening an issue or pull request
 

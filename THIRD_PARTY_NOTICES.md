@@ -1,6 +1,6 @@
 # Third Party Notices
 
-This file records external resources and summarizes dependency attribution. Package-by-package technical license findings are in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md). Project-owner publication rights remain a separate manual confirmation.
+This file records external resources and summarizes dependency attribution. Package-by-package license findings are in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ## Browser loaded resources
 
@@ -15,4 +15,4 @@ Direct runtime and development package licenses, including relevant transitive d
 
 ## Project assets
 
-Only a newly created Office Lunch SVG icon is included. Private project screenshots and food illustrations were excluded pending ownership and license confirmation. User uploaded store and menu images are not included in this repository.
+The repository includes the Office Order SVG icon. Store and menu images are supplied by each deployment operator and are not included in this repository.

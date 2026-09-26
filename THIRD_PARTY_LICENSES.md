@@ -1,6 +1,6 @@
 # Third Party License Inventory
 
-This inventory records the technical license information for the first public-source candidate. It does not confirm that the project owner has rights to publish the original application code or included assets; see `OPEN_SOURCE_READINESS_REPORT.md` for that separate owner confirmation.
+This inventory records license information for direct dependencies, relevant transitive dependencies, and bundled or browser-loaded assets.
 
 ## Direct npm dependencies
 
@@ -32,15 +32,15 @@ Direct development-tool packages also declare permissive licenses in their insta
 
 ### `uuid`
 
-- `uuid` is MIT-licensed. Its security advisory is tracked separately in `SECURITY_REVIEW.md`; license status is not the reason for that review.
+- `uuid` is MIT-licensed.
 
 ## Browser-loaded resources and assets
 
 - Font Awesome Free 6.7.2 is requested from cdnjs, not bundled. Retain the attribution and review the upstream terms linked in `THIRD_PARTY_NOTICES.md`.
 - DM Sans and Noto Sans TC are requested from Google Fonts, not bundled. Google Fonts families are published under open-source licenses; verify family-specific terms if fonts are later copied into this repository.
-- The only bundled image asset is the newly authored Office Lunch SVG icon. Private screenshots/food illustrations and user-provided store/menu images are excluded.
-- Demo accounts, stores, menu entries, and addresses are fictional test data. No production data or imported image/code asset is intentionally included.
+- The only bundled image asset is the Office Order SVG icon. Store and menu images are supplied by each deployment operator and are not included in this repository.
+- Emulator examples use fictional accounts, stores, menu entries, and addresses.
 
 ## Project license
 
-The repository includes an MIT license in `LICENSE`; both root and Functions `package.json` identify `MIT`. This technical consistency check is separate from owner publication-right confirmation.
+The repository includes an MIT license in `LICENSE`; both root and Functions `package.json` identify `MIT`.

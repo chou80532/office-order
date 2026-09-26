@@ -139,7 +139,7 @@ watch(() => auth.isInitialized.value, async (initialized) => {
       </Transition>
     </RouterView>
   </template>
-  <LoadingState v-else class="app-loading" title="Office Lunch" description="載入中…" />
+  <LoadingState v-else class="app-loading" title="Office Order" description="載入中…" />
   <ToastContainer />
   <DialogHost />
 </template>

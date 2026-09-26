@@ -114,7 +114,7 @@ function styleSheet(sheet, config) {
 export async function buildXlsxBuffer({ sheets }) {
   const ExcelJS = await loadExcelJS()
   const workbook = new ExcelJS.Workbook()
-  workbook.creator = 'Office Lunch'
+  workbook.creator = 'Office Order'
   workbook.created = new Date()
   workbook.modified = new Date()
 
