@@ -1,17 +1,17 @@
 # Office Order
 
-[繁體中文](./README.zh-TW.md)
+[繁體中文](./README.zh-TW.md) | **English**
 
 Office Order is a Firebase-powered open-source group ordering system for small teams and offices. Use it to coordinate lunch, drinks, afternoon tea, group purchases, and other team orders. You can deploy the web app and Cloud Functions to a Firebase project that you control. Firebase Authentication, Firestore, Cloud Storage and Cloud Functions provide the backend.
 
 Repository: [chou80532/office-order](https://github.com/chou80532/office-order)
 
-The repository starts in local emulator mode. Its example configuration uses the reserved `demo-office-lunch` project and connects Auth, Firestore, Storage and Functions to localhost.
+The repository starts in local emulator mode. Its example configuration uses the reserved `demo-office-lunch` project and connects Auth, Firestore, Storage and Functions to localhost. Emulator mode uses local emulator services only and does not connect to a production Firebase project.
 
 ## Features
 
 - Create and manage stores, menus and daily ordering settings.
-- Submit, edit and cancel group orders with server-side validation.
+- Submit, edit and cancel individual orders with server-side validation and aggregation.
 - Track member wallets, cash collection and order totals.
 - Register members through admin-created invitation codes.
 - Review order summaries and export records to Excel.
@@ -85,7 +85,7 @@ The browser loads DM Sans and Noto Sans TC from Google Fonts and Font Awesome Fr
 | `VITE_USE_FIREBASE_EMULATORS` | Defaults to emulator mode. Set to `false` only when intentionally using your own Firebase project. |
 | `VITE_FIREBASE_EMULATOR_HOST` | Local emulator host; defaults to `127.0.0.1`. |
 
-Firebase web configuration is public client configuration. Do not put service account files, private keys or server credentials in frontend variables or Git.
+Firebase web configuration is public client configuration. Never put Service Account JSON files, private keys, Firebase Admin credentials or server secrets in Git or frontend environment variables.
 
 ## Database and first administrator
 
@@ -142,7 +142,3 @@ See [SECURITY.md](SECURITY.md). Report security issues through GitHub's private 
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-
-## Screenshots
-
-No screenshots are currently included.

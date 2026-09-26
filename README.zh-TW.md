@@ -1,6 +1,6 @@
 # Office Order
 
-[English](./README.md)
+**繁體中文** | [English](./README.md)
 
 ## 專案簡介
 
@@ -8,12 +8,12 @@ Office Order 是一套以 Firebase 為後端的開源團體訂購系統，適合
 
 Repository：[chou80532/office-order](https://github.com/chou80532/office-order)
 
-專案預設以本機 Emulator 開始。範例設定使用保留用途的 `demo-office-lunch` 專案 ID，並將 Authentication、Firestore、Storage 與 Functions 連線到本機。
+專案預設以本機 Emulator 開始。範例設定使用保留用途的 `demo-office-lunch` 專案 ID，並將 Authentication、Firestore、Storage 與 Functions 連線到本機。Emulator 模式只使用本機模擬服務，不會連線至任何正式 Firebase 專案。
 
 ## 功能特色
 
 - 建立及管理店家、菜單與每日訂購設定。
-- 送出、修改及取消團體訂單，並由伺服器端驗證。
+- 送出、修改及取消個人訂單，並由伺服器端驗證與彙整。
 - 管理成員錢包、現金收款與訂單金額。
 - 由管理員建立邀請碼，供成員註冊。
 - 查看訂單摘要並匯出 Excel 檔案。
@@ -95,7 +95,7 @@ Repository：[chou80532/office-order](https://github.com/chou80532/office-order)
 | `VITE_USE_FIREBASE_EMULATORS` | 預設啟用 Emulator。只有確定要連線至自己的 Firebase 專案時才設為 `false`。 |
 | `VITE_FIREBASE_EMULATOR_HOST` | 本機 Emulator 主機，預設為 `127.0.0.1`。 |
 
-Firebase web 設定屬於前端公開設定。請勿將 service account 檔案、private key 或伺服器憑證放進前端環境變數或 Git。
+Firebase web 設定屬於前端公開設定。請勿將 Service Account JSON、private key、Firebase Admin 憑證或伺服器端 secret 放進 Git 或前端環境變數。
 
 ## 資料庫與第一位管理員
 
@@ -154,7 +154,3 @@ npm run test:functions:emulator
 ## 授權
 
 本專案採用 MIT License，詳見 [LICENSE](./LICENSE)。
-
-## 畫面截圖
-
-目前沒有提供畫面截圖。
