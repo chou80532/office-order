@@ -1,5 +1,7 @@
 # Office Order
 
+[繁體中文](./README.zh-TW.md)
+
 Office Order is a Firebase-powered open-source group ordering system for small teams and offices. Use it to coordinate lunch, drinks, afternoon tea, group purchases, and other team orders. You can deploy the web app and Cloud Functions to a Firebase project that you control. Firebase Authentication, Firestore, Cloud Storage and Cloud Functions provide the backend.
 
 Repository: [chou80532/office-order](https://github.com/chou80532/office-order)
