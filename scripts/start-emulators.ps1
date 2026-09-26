@@ -7,4 +7,4 @@ $env:VITE_USE_FIREBASE_EMULATORS = 'true'
 $env:VITE_FIREBASE_PROJECT_ID = 'demo-office-lunch'
 $env:VITE_FIREBASE_EMULATOR_HOST = '127.0.0.1'
 
-firebase emulators:start --project demo-office-lunch --config firebase.json --only auth,firestore,storage,functions,hosting
+npm run emulators

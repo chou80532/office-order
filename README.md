@@ -54,19 +54,21 @@ The browser loads DM Sans and Noto Sans TC from Google Fonts and Font Awesome Fr
 
    The Emulator UI is available at `http://127.0.0.1:4000`.
 
+   This command imports existing local test data from `.local/emulator-data/`. Enter `q` and press Enter to save Auth, Firestore and Storage data before stopping; on Windows, `Ctrl+C` may interrupt the save. The directory is ignored by Git. On Windows, `scripts/windows/02_啟動模擬器與本地預覽.bat` starts the emulators and Vite together. To clear only local emulator data, close the emulators and use `scripts/windows/07_重建本地測試資料.bat`.
+
 4. Start the app in a second terminal:
 
    ```sh
    npm run dev
    ```
 
-5. In a third terminal, create fictional local demo accounts and menus:
+5. On the first run, create fictional local demo accounts and menus in a third terminal:
 
    ```sh
    npm run seed:demo
    ```
 
-   The seed command refuses non-demo Firebase project IDs and non-local emulator hosts. It prints the local admin email and a randomly generated password. Use these credentials only with the local Auth emulator.
+   The seed command refuses non-demo Firebase project IDs and non-local emulator hosts. It prints the local admin email and a randomly generated password. Use these credentials only with the local Auth emulator. Existing data is imported on later starts; rerunning the seed changes demo account passwords.
 
 ## Configuration
 

@@ -9,6 +9,7 @@ coverage/
 .vite/
 .firebase/
 .local/
+firebase-export-*/
 .firebase-debug.log
 firebase-debug.log*
 firestore-debug.log*
