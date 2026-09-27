@@ -16,12 +16,47 @@ vi.mock('firebase/firestore', () => ({
   serverTimestamp: vi.fn(), setDoc: vi.fn().mockResolvedValue(),
 }))
 import { createAuth } from './useAuth'
+import { createUserWithEmailAndPassword } from 'firebase/auth'
+import { completeInviteRegistrationViaFunction } from '../services/accountFunctions'
 
 beforeEach(() => {
   vi.clearAllMocks()
   vi.stubGlobal('window', { setTimeout: vi.fn(), clearTimeout: vi.fn() })
 })
 afterEach(() => vi.unstubAllGlobals())
+
+it.each(['success', 'failure'])('keeps registration signed out until invitation verification: %s', async outcome => {
+  const user = { uid: 'new', email: 'new@example.test', delete: vi.fn().mockResolvedValue() }
+  let resolveInvite, rejectInvite
+  completeInviteRegistrationViaFunction.mockReturnValue(new Promise((resolve, reject) => {
+    resolveInvite = resolve
+    rejectInvite = reject
+  }))
+  createUserWithEmailAndPassword.mockImplementation(async () => {
+    await mocks.changed(user)
+    return { user }
+  })
+  const state = createAuth()
+  await state.initAuth()
+  await mocks.changed(null)
+  const registration = state.register(user.email, 'password', 'ABCDEF')
+  const result = registration.catch(error => error)
+  await vi.waitFor(() => expect(completeInviteRegistrationViaFunction).toHaveBeenCalled())
+  expect(state.isLoggedIn.value).toBe(false)
+  expect(state.profileLoaded.value).toBe(false)
+  if (outcome === 'success') {
+    resolveInvite({ memberName: 'New member' })
+    await result
+    expect(state.isLoggedIn.value).toBe(true)
+    expect(state.profileLoaded.value).toBe(true)
+    expect(state.userDisplayName.value).toBe('New member')
+  } else {
+    rejectInvite(new Error('INVALID_CODE'))
+    expect((await result).message).toBe('INVALID_CODE')
+    expect(state.isLoggedIn.value).toBe(false)
+    expect(user.delete).toHaveBeenCalled()
+  }
+})
 
 it.each(['success', 'failure'])('ignores an old profile %s after switching accounts', async (outcome) => {
   let resolveOld, rejectOld

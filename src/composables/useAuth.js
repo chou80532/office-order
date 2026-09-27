@@ -120,7 +120,8 @@ export const createAuth = () => {
           return
         }
 
-        isLoggedIn.value = true
+        // Firebase 建立帳號後立即送出登入事件；邀請驗證完成前不可進入首頁。
+        isLoggedIn.value = !skipProfileLoad
         adminEmail.value = user.email || ''
         const cachedProfile = readCachedProfile(user.uid)
         userDisplayName.value = cachedProfile?.displayName || ''
@@ -130,7 +131,6 @@ export const createAuth = () => {
         resolveInit(user)
 
         if (skipProfileLoad) {
-          profileLoaded.value = true
           profileLoadPromise = Promise.resolve()
           return
         }
@@ -192,6 +192,8 @@ export const createAuth = () => {
       userDisplayName.value = memberName
       isAdmin.value = false
       writeCachedProfile(newUser.uid, memberName)
+      profileLoaded.value = true
+      isLoggedIn.value = true
     } catch (error) {
       skipProfileLoad = false
       try { await newUser.delete() } catch { /* 保留原始註冊錯誤 */ }

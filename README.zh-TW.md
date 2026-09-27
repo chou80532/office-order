@@ -62,7 +62,7 @@ Repository：[chou80532/office-order](https://github.com/chou80532/office-order)
 
    Emulator UI 位於 `http://127.0.0.1:4000`。
 
-   此指令會自動載入 `.local/emulator-data/` 內既有的本機測試資料。結束前輸入 `q` 並按 Enter，會保存 Authentication、Firestore 與 Storage 資料；Windows 上的 `Ctrl+C` 可能中斷保存。該目錄已由 Git 忽略。Windows 使用者也可執行 `scripts/windows/02_啟動模擬器與本地預覽.bat`，同時啟動 Emulator 與網頁預覽。若要清除本機測試資料，先關閉 Emulator，再執行 `scripts/windows/07_重建本地測試資料.bat`。
+   此指令會自動載入 `.local/emulator-data/` 內既有的本機測試資料。結束前輸入 `q` 並按 Enter，會保存 Authentication、Firestore 與 Storage 資料；Windows 上的 `Ctrl+C` 可能中斷保存。該目錄已由 Git 忽略。Windows 使用者也可執行 `scripts/windows/02_啟動模擬器與本地預覽.bat`，同時啟動 Emulator 與網頁預覽。若要清除本機測試資料，先關閉 Emulator，再執行 `scripts/windows/05_重建本地測試資料.bat`。
 
 4. 在第二個終端機啟動網頁應用程式：
 
@@ -76,7 +76,7 @@ Repository：[chou80532/office-order](https://github.com/chou80532/office-order)
    npm run seed:demo
    ```
 
-   Seed 指令只允許使用示範 Firebase 專案 ID 與本機 Emulator 主機。執行後會印出本機管理員電子郵件與隨機產生的密碼；這組帳密只能用於本機 Authentication Emulator。下次啟動會載入既有資料，重新執行 Seed 會改變示範帳號密碼。
+   Seed 指令只允許使用示範 Firebase 專案 ID 與本機 Emulator 主機。登入本機 Authentication Emulator 時，管理員帳號使用 `admin@example.test`，密碼使用 `office-order-demo`；其他示範帳號也使用相同密碼。這組帳密只能用於本機 Emulator。下次啟動會載入既有資料；重新執行 Seed 會重新套用示範帳號、錢包餘額、菜單與每日設定。
 
 ## Firebase 設定與環境變數
 

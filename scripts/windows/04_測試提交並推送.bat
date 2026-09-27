@@ -8,7 +8,7 @@ where node >nul 2>&1 || goto :node_error
 where npm >nul 2>&1 || goto :npm_error
 where powershell >nul 2>&1 || goto :powershell_error
 git rev-parse --show-toplevel >nul 2>&1 || goto :repo_error
-git status
+git -c core.quotepath=false status
 for /f "delims=" %%B in ('git branch --show-current') do set "BRANCH=%%B"
 if not defined BRANCH goto :branch_error
 git remote get-url origin >nul 2>&1 || goto :remote_error
@@ -22,22 +22,20 @@ call :run_script test || goto :checks_error
 call :run_script build || goto :checks_error
 git ls-files --cached --others --exclude-standard -z | node "%~dp0check-sensitive-files.cjs" || goto :sensitive_error
 echo [檢查] 目前可提交變更：
-git status --short
-echo 即將暫存目前 Git 可提交變更。
+git -c core.quotepath=false status --short
+echo 即將暫存、提交目前 Git 可提交變更，並推送到 origin/%BRANCH%。
 set "ADD_CONFIRM="
-set /p "ADD_CONFIRM=輸入 Y 繼續暫存，其他輸入取消："
-if not "%ADD_CONFIRM%"=="Y" goto :cancel
+set /p "ADD_CONFIRM=輸入 Y 確認暫存、提交並推送，其他輸入取消："
+if /i not "%ADD_CONFIRM%"=="Y" goto :cancel
 git add -A || goto :stage_error
 git ls-files --cached --others --exclude-standard -z | node "%~dp0check-sensitive-files.cjs" || goto :unstage_sensitive_error
-git diff --cached --name-only
+git -c core.quotepath=false diff --cached --name-only
 git diff --cached --quiet
 if not errorlevel 1 goto :nothing_error
-git status
-set "COMMIT_CONFIRM="
-set /p "COMMIT_CONFIRM=是否確認提交？請輸入 Y："
-if not "%COMMIT_CONFIRM%"=="Y" goto :cancel_staged
+git -c core.quotepath=false status
 set "COMMIT_MESSAGE="
-set /p "COMMIT_MESSAGE=請輸入 Commit Message："
+for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd HH:mm'"') do set "COMMIT_MESSAGE=%%T"
+set /p "COMMIT_MESSAGE=請輸入 Commit Message（直接 Enter 使用 %COMMIT_MESSAGE%）："
 node -e "process.exit(process.env.COMMIT_MESSAGE?.trim()?0:1)" || goto :empty_message
 powershell -NoProfile -Command "$m=$env:COMMIT_MESSAGE -replace [char]34, ([string][char]92 + [string][char]34); & git commit -m $m; exit $LASTEXITCODE" || goto :commit_error
 git fetch origin || goto :post_fetch_error
@@ -112,8 +110,6 @@ goto :fail
 git reset
 echo [錯誤] 沒有可提交的變更。
 goto :fail
-:cancel_staged
-git reset
 :cancel
 echo [取消] 未建立 Commit，工作目錄修改已保留。
 pause

@@ -17,7 +17,8 @@ setLocalEmulator('FIREBASE_STORAGE_EMULATOR_HOST', 9199)
 process.env.GCLOUD_PROJECT = projectId
 
 const admin = require('firebase-admin')
-const password = crypto.randomBytes(18).toString('base64url')
+// Fixed credentials are convenient for the local emulator and must never be used in production.
+const demoPassword = 'office-order-demo'
 
 admin.initializeApp({ projectId })
 
@@ -88,7 +89,7 @@ async function ensureAuthUser(account) {
   try {
     user = await admin.auth().getUserByEmail(account.email)
     user = await admin.auth().updateUser(user.uid, {
-      password,
+      password: demoPassword,
       emailVerified: true,
       displayName: account.name,
     })
@@ -96,7 +97,7 @@ async function ensureAuthUser(account) {
     if (error.code !== 'auth/user-not-found') throw error
     user = await admin.auth().createUser({
       email: account.email,
-      password,
+      password: demoPassword,
       emailVerified: true,
       displayName: account.name,
     })
@@ -212,7 +213,7 @@ async function seed() {
   console.log(`- ${stores.length} 間店家、${stores.reduce((total, store) => total + store.menuItems.length, 0)} 項餐點`)
   console.log(`- ${accounts.length} 位成員與測試錢包`)
   accounts.forEach((account) => {
-    console.log(`  ${account.name}：${account.email} / ${password}，餘額 NT$ ${account.balance}`)
+    console.log(`  ${account.name}：${account.email} / ${demoPassword}，餘額 NT$ ${account.balance}`)
   })
   console.log(`- 今日已開放：${stores.map(store => store.name).join('、')}`)
   console.log(`- 專案：${projectId}（Auth UID 共 ${users.length} 筆）`)

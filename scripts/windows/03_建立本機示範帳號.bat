@@ -16,7 +16,7 @@ set "FIREBASE_STORAGE_EMULATOR_HOST=127.0.0.1:9199"
 if exist ".local\emulator-data\firebase-export-metadata.json" goto :confirm_reseed
 goto :seed
 :confirm_reseed
-echo [提示] 已有保存的測試資料。重新執行 03 會重設示範帳號密碼及部分示範設定。
+echo [提示] 已有保存的測試資料。重新執行 03 會重新套用示範帳號、錢包餘額、菜單與每日設定。
 set "RESEED_CONFIRM="
 set /p "RESEED_CONFIRM=確定重建示範資料請輸入 SEED，其他輸入取消："
 if not "%RESEED_CONFIRM%"=="SEED" goto :cancel
@@ -24,7 +24,7 @@ if not "%RESEED_CONFIRM%"=="SEED" goto :cancel
 echo [執行] 建立本機示範帳號與菜單資料。
 call npm run seed:demo
 if errorlevel 1 goto :seed_error
-echo [完成] 本機示範帳號已建立；帳號與本次隨機密碼列於上方，請先記下。
+echo [完成] 本機示範帳號已建立。管理員：admin@example.test；密碼：office-order-demo（所有示範帳號共用）。
 pause
 exit /b 0
 :cancel
