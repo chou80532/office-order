@@ -16,18 +16,38 @@
       <!-- Body -->
       <div class="sme-body">
         <!-- Left: Image -->
-        <div class="sme-image-pane" :class="{ 'sme-image-empty': !currentImageUrl, 'sme-unified-pane': unifiedEditor }">
+        <div class="sme-image-pane" :class="{ 'sme-image-empty': !currentImageUrl, 'sme-unified-pane': unifiedEditor, 'is-collapsed': imageCollapsed }">
           <slot name="store-details" />
-          <div class="sme-image-viewer">
+          <!-- 手機版才顯示：菜單圖片可收合，讓下方品項編輯有空間；桌機左右並排不需要 -->
+          <button
+            type="button"
+            class="sme-image-toggle"
+            :aria-expanded="!imageCollapsed"
+            aria-controls="sme-image-viewer"
+            @click="imageCollapsed = !imageCollapsed"
+          >
+            <img v-if="currentImageUrl" :src="currentImageUrl" alt="" class="sme-image-toggle-thumb" decoding="async" @error="handleImageError">
+            <i v-else class="fas fa-image sme-image-toggle-icon" aria-hidden="true"></i>
+            <span class="sme-image-toggle-label">
+              菜單圖片
+              <small v-if="imagesWithUrl.length > 1">第 {{ currentImageIndex + 1 }}／{{ imagesWithUrl.length }} 張</small>
+              <small v-else-if="!imagesWithUrl.length">尚未上傳</small>
+            </span>
+            <span class="sme-image-toggle-action">{{ imageCollapsed ? '展開' : '收合' }}<i class="fas fa-chevron-down" aria-hidden="true"></i></span>
+          </button>
+          <div id="sme-image-viewer" class="sme-image-viewer">
+          <!-- 工具列定位在圖片區內，才不會蓋到下面的縮圖列 -->
+          <div class="sme-image-stage-wrap">
           <div
             class="sme-image-stage"
+            :style="{ touchAction: pinchScale > 1 ? 'none' : 'pan-y' }"
             @wheel.prevent="handleWheelZoom"
             @mousedown="onMouseDown"
             @mousemove="onMouseMove"
             @mouseup="onMouseUp"
             @mouseleave="onMouseUp"
-            @touchstart.prevent="onTouchStart"
-            @touchmove.prevent="onTouchMove"
+            @touchstart="onTouchStart"
+            @touchmove="onTouchMove"
             @touchend="onTouchEnd"
           >
             <img
@@ -52,15 +72,21 @@
           </div>
 
           <!-- Zoom toolbar -->
-          <div v-if="currentImageUrl || $slots['image-actions']" class="sme-zoom-bar">
+          <div
+            v-if="currentImageUrl || $slots['image-actions']"
+            class="sme-zoom-bar"
+            :class="{ 'is-zoomed': pinchScale !== 1, 'has-actions': !!$slots['image-actions'] }"
+          >
             <template v-if="currentImageUrl">
-            <button type="button" class="glass-btn" @click="zoomOut" title="縮小"><i class="fas fa-search-minus"></i></button>
-            <span class="sme-zoom-level">{{ Math.round(pinchScale * 100) }}%</span>
-            <button type="button" class="glass-btn" @click="zoomIn" title="放大"><i class="fas fa-search-plus"></i></button>
-            <div class="sme-divider"></div>
-            <button type="button" class="glass-btn" @click="resetZoom" title="還原"><i class="fas fa-expand"></i></button>
+            <!-- 手機版用雙指縮放，縮放鈕只在桌機顯示；「還原」在手機版只有縮放過才出現 -->
+            <button type="button" class="glass-btn sme-zoom-step" @click="zoomOut" title="縮小"><i class="fas fa-search-minus"></i></button>
+            <span class="sme-zoom-level sme-zoom-step">{{ Math.round(pinchScale * 100) }}%</span>
+            <button type="button" class="glass-btn sme-zoom-step" @click="zoomIn" title="放大"><i class="fas fa-search-plus"></i></button>
+            <div class="sme-divider sme-zoom-step"></div>
+            <button type="button" class="glass-btn sme-zoom-reset" @click="resetZoom" title="還原"><i class="fas fa-expand"></i></button>
             </template>
             <slot name="image-actions" :image="imagesWithUrl[currentImageIndex] || null" />
+          </div>
           </div>
 
           <!-- Image navigation (multi-image) -->
@@ -513,6 +539,9 @@ const draftKey = computed(() => props.store?.name || '')
 const currentImageIndex = ref(0)
 const currentImageUrl = computed(() => imagesWithUrl.value[currentImageIndex.value]?.url || '')
 const mainImageLoading = ref(true)
+// 手機版菜單圖片預設收合：展開時會吃掉半個螢幕，品項編輯才是主要工作。還沒有圖片時保持展開，上傳鈕才看得到。
+const isNarrowViewport = () => typeof window !== 'undefined' && !!window.matchMedia?.('(max-width: 900px)').matches
+const imageCollapsed = ref(isNarrowViewport() && imagesWithUrl.value.length > 0)
 
 const selectImage = (idx) => { currentImageIndex.value = idx; resetZoom() }
 const prevImage = () => { if (imagesWithUrl.value.length < 2) return; currentImageIndex.value = (currentImageIndex.value - 1 + imagesWithUrl.value.length) % imagesWithUrl.value.length; resetZoom() }
@@ -530,7 +559,8 @@ const imgStyle = computed(() => ({
   cursor: isDragging.value ? 'grabbing' : pinchScale.value > 1 ? 'grab' : 'default',
   transformOrigin: 'center center', maxWidth: '100%', maxHeight: '100%',
   transition: isTouchPanning ? 'none' : 'transform 0.15s ease',
-  willChange: 'transform', touchAction: 'none', userSelect: 'none'
+  // 沒放大時讓單指上下滑照常捲動頁面（手機版整頁一起捲），放大後才接手拖曳
+  willChange: 'transform', touchAction: pinchScale.value > 1 ? 'none' : 'pan-y', userSelect: 'none'
 }))
 
 const clampScale = (v) => Math.min(Math.max(v, 0.3), 5)
@@ -543,10 +573,12 @@ const getTouchDist = (t1, t2) => Math.hypot(t2.clientX - t1.clientX, t2.clientY 
 const getTouchCenter = (t1, t2) => ({ x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 })
 
 const onTouchStart = (e) => {
+  if (e.touches.length === 2 && e.cancelable) e.preventDefault()
   if (e.touches.length === 2) { isTouchPanning = true; lastTouchDist = getTouchDist(e.touches[0], e.touches[1]); lastTouchCenter = getTouchCenter(e.touches[0], e.touches[1]) }
   else if (e.touches.length === 1 && pinchScale.value > 1) { isTouchPanning = true; lastPanPos = { x: e.touches[0].clientX, y: e.touches[0].clientY } }
 }
 const onTouchMove = (e) => {
+  if (e.cancelable && (e.touches.length === 2 || pinchScale.value > 1)) e.preventDefault()
   if (e.touches.length === 2) {
     const newDist = getTouchDist(e.touches[0], e.touches[1])
     pinchScale.value = clampScale(pinchScale.value * (newDist / lastTouchDist)); lastTouchDist = newDist
@@ -712,7 +744,11 @@ const loadExistingToEditor = () => {
   }
   textInput.value = lines.join('\n')
   lastParsedText.value = textInput.value
-  nextTick(() => editorPane.value?.scrollTo({ top: 0, behavior: 'smooth' }))
+  // 桌機是編輯區自己捲；手機版整頁一起捲，改成把編輯區捲到畫面頂端
+  nextTick(() => {
+    if (isNarrowViewport()) editorPane.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    else editorPane.value?.scrollTo({ top: 0, behavior: 'smooth' })
+  })
 }
 
 const save = async () => {
@@ -1050,9 +1086,6 @@ onUnmounted(() => { document.removeEventListener('keydown', onKeydown) })
 @media (max-width: 900px) {
   .sme-overlay { padding:0; }
   .sme-modal { height:100dvh; max-height:100dvh; border-radius:0; }
-  .sme-body { flex-direction:column; }
-  .sme-image-pane { flex:0 0 auto; height:clamp(120px, 25dvh, 240px); border-right:none; border-bottom:1.5px solid var(--muted-line); }
-  .sme-image-empty { height:56px; }
   .sme-image-empty .sme-no-image { flex-direction:row; font-size:var(--text-micro); }
   .sme-editor-pane { padding:14px 14px 20px; }
 }
@@ -1089,11 +1122,8 @@ onUnmounted(() => { document.removeEventListener('keydown', onKeydown) })
 
 <style scoped>
 .sme-image-viewer { flex:1; display:flex; flex-direction:column; min-height:0; position:relative; }
-@media (max-width:768px) {
-  .sme-unified-pane { height:auto; max-height:none; flex-shrink:0; }
-  .sme-unified-pane .sme-image-viewer { flex:none; height:220px; }
-  .sme-unified-pane.sme-image-empty .sme-image-viewer { height:56px; }
-}
+.sme-image-stage-wrap { flex:1; display:flex; flex-direction:column; min-height:0; position:relative; }
+.sme-image-toggle { display:none; }
 </style>
 
 <style scoped>
@@ -1105,4 +1135,50 @@ onUnmounted(() => { document.removeEventListener('keydown', onKeydown) })
 .sme-zoom-bar { max-width:calc(100% - 16px); gap:3px; padding:6px; }
 .sme-zoom-level { flex-shrink:0; }
 .sme-zoom-bar .glass-btn { flex-shrink:0; }
+</style>
+
+<style scoped>
+/* 手機版：上下堆疊時整個視窗只有一條捲軸，菜單圖片可收合。
+   原本圖片區固定高度、品項編輯區另外捲動，編輯區被擠到只剩幾公分；
+   縮放工具列又浮在圖片和縮圖列上面，把縮圖擋住。 */
+@media (max-width: 900px) {
+  .sme-body { flex-direction:column; overflow-y:auto; overscroll-behavior:contain; }
+  .sme-image-pane { flex:none; height:auto; background:var(--paper); border-right:none; border-bottom:1.5px solid var(--muted-line); }
+  .sme-editor-pane { flex:none; overflow:visible; }
+
+  .sme-image-toggle {
+    display:flex; align-items:center; gap:10px;
+    width:calc(100% - 28px); min-height:52px; margin:0 14px 12px; padding:8px 12px; box-sizing:border-box;
+    border:1px solid var(--muted-line); border-radius:var(--r-md); background:var(--paper-2);
+    color:var(--ink); font:inherit; font-size:var(--text-label); font-weight:700; text-align:left; cursor:pointer;
+  }
+  .sme-image-pane > .sme-image-toggle:first-child { margin-top:12px; }
+  .sme-image-toggle:focus-visible { outline:2px solid var(--persimmon); outline-offset:2px; }
+  .sme-image-toggle-thumb { width:36px; height:36px; flex-shrink:0; object-fit:cover; border-radius:var(--r-sm); background:var(--cream); }
+  .sme-image-toggle-icon { width:36px; flex-shrink:0; text-align:center; color:var(--ink-mute); font-size:var(--text-body); }
+  .sme-image-toggle-label { flex:1; min-width:0; display:flex; flex-direction:column; }
+  .sme-image-toggle-label small { color:var(--ink-mute); font-size:var(--text-micro); font-weight:600; }
+  .sme-image-toggle-action { display:inline-flex; align-items:center; gap:6px; flex-shrink:0; color:var(--persimmon-dark); font-size:var(--text-micro); }
+  .sme-image-toggle-action i { transition:transform .15s; }
+  .sme-image-toggle[aria-expanded="true"] .sme-image-toggle-action i { transform:rotate(180deg); }
+
+  .sme-image-pane.is-collapsed .sme-image-viewer { display:none; }
+  .sme-image-viewer, .sme-image-stage-wrap { flex:none; }
+  .sme-image-viewer { background:var(--image-viewer-bg); }
+  .sme-image-stage { flex:none; height:min(60dvh, 520px); }
+  .sme-image-empty .sme-image-stage { height:56px; }
+
+  /* 工具列改成圖片下方的一整列，不再浮在圖片／縮圖上 */
+  .sme-zoom-bar {
+    position:static; transform:none; width:100%; max-width:none; box-sizing:border-box;
+    justify-content:center; flex-wrap:wrap; gap:4px; padding:6px 8px;
+    border:0; border-top:1px solid color-mix(in srgb, var(--paper) 10%, transparent); border-radius:0;
+    background:transparent; backdrop-filter:none;
+  }
+  .sme-zoom-step { display:none; }
+  .sme-zoom-bar:not(.is-zoomed) .sme-zoom-reset,
+  .sme-zoom-bar:not(.is-zoomed) :slotted(.image-action-divider) { display:none; }
+  /* 沒縮放、也沒有圖片操作鈕時整列是空的，直接收起來 */
+  .sme-zoom-bar:not(.is-zoomed):not(.has-actions) { display:none; }
+}
 </style>
