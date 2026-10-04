@@ -3,7 +3,8 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { formatMoney } from '../../utils/format'
 import { groupDishOptions } from '../../utils/dishOptions'
 import { normalizeOptionGroups } from '../../utils/dishOptionGroups'
-import { UNCATEGORIZED_MENU_CATEGORY, compareMenuCategory, isAddonMenuItem, menuItemKey, normalizeMenuCategory } from '../../utils/menuCategories'
+import { UNCATEGORIZED_MENU_CATEGORY, compareMenuCategory, isAddonMenuItem, menuCategoryLabel, menuItemKey, normalizeMenuCategory } from '../../utils/menuCategories'
+import { t } from '../../i18n'
 
 const props = defineProps({
   store: { type: Object, default: null },
@@ -15,7 +16,9 @@ const props = defineProps({
 
 const emit = defineEmits(['add'])
 
-const ALL_CATEGORY = '全部'
+// 「全部」分頁的內部識別；顯示時才翻譯，避免與店家自訂的分類名稱撞名。
+const ALL_CATEGORY = '__all__'
+const categoryTabLabel = category => (category === ALL_CATEGORY ? t('dish.all') : menuCategoryLabel(category))
 const itemName = (item) => String(item?.name || '').trim()
 const isVisibleMainItem = (item) => itemName(item) && !isAddonMenuItem(item)
 const itemCategory = (item) => normalizeMenuCategory(item?.category, UNCATEGORIZED_MENU_CATEGORY)
@@ -27,8 +30,14 @@ const priceFromLabel = item => !!(item._variants || hasPricedOptions(item))
 // 要點開才知道還有得選，掃視菜單時會漏掉。
 const optionHint = (item) => {
   const labels = normalizeOptionGroups(item?.options).map(group => group.label)
-  return labels.length ? `可選 ${labels.join('・')}` : ''
+  return labels.length ? t('dish.optionHint', { labels: labels.join('・') }) : ''
 }
+const cardAria = item => t('dish.cardAria', {
+  name: item.name,
+  price: formatMoney(item.price),
+  from: priceFromLabel(item) ? t('dish.priceFrom') : '',
+  action: optionHint(item) || (priceFromLabel(item) ? t('dish.actionVariant') : t('dish.actionNotes')),
+})
 const cartCountFor = (item, storeName = '') => (item._variants || [item]).reduce((sum, variant) => sum + (props.cartCounts[dishKey(variant, storeName)] || 0), 0)
 const dishSignalKey = (item, storeName = '') =>
   `${String(storeName || props.store?.name || '').trim()}::${itemName(item)}::${Number(item?.price) || 0}`
@@ -171,20 +180,20 @@ function openDishImageSearch(item, storeName = '') {
     <template v-if="isGlobalSearch">
       <div v-if="globalResults.length === 0" class="placeholder">
         <span class="placeholder-icon" aria-hidden="true"><i class="fas fa-magnifying-glass"></i></span>
-        <p>沒有找到「{{ searchQuery }}」的餐點</p>
-        <p class="sub">換個關鍵字，或直接在購物車手動輸入餐點</p>
+        <p>{{ t('dish.noResults', { query: searchQuery }) }}</p>
+        <p class="sub">{{ t('dish.noResultsManual') }}</p>
       </div>
       <div v-else class="global-results">
         <div v-for="storeGroup in globalResults" :key="storeGroup.name" class="store-group">
           <div class="store-group-label">
             <i class="fas fa-store store-group-icon"></i>
             {{ storeGroup.name }}
-            <span class="store-group-count">{{ storeGroup.itemCount }} 項</span>
+            <span class="store-group-count">{{ t('dish.itemCount', { count: storeGroup.itemCount }) }}</span>
           </div>
           <section v-for="categoryGroup in storeGroup.groups" :key="`${storeGroup.name}-${categoryGroup.category}`" class="category-section is-compact">
             <div class="category-heading">
-              <span>{{ categoryGroup.category }}</span>
-              <span class="category-count">{{ categoryGroup.items.length }} 項</span>
+              <span>{{ menuCategoryLabel(categoryGroup.category) }}</span>
+              <span class="category-count">{{ t('dish.itemCount', { count: categoryGroup.items.length }) }}</span>
             </div>
             <div class="card-grid">
               <div
@@ -194,7 +203,7 @@ function openDishImageSearch(item, storeName = '') {
                 :class="{ 'in-cart': cartCountFor(item, storeGroup.name) > 0, 'has-last-order': userStatsFor(item, storeGroup.name)?.isLast }"
                 role="button"
                 tabindex="0"
-                :aria-label="`${item.name}，${formatMoney(item.price)}${priceFromLabel(item) ? ' 起' : ''}${optionHint(item) ? `，${optionHint(item)}` : priceFromLabel(item) ? '，選擇規格' : '，選擇備註與加料'}`"
+                :aria-label="cardAria(item)"
                 @click.stop="onCardClick(item, storeGroup.name)"
                 @keydown.enter.prevent="onCardClick(item, storeGroup.name)"
                 @keydown.space.prevent="onCardClick(item, storeGroup.name)"
@@ -210,20 +219,20 @@ function openDishImageSearch(item, storeName = '') {
                     <span class="card-badge">{{ cartCountFor(item, storeGroup.name) }}</span>
                   </span>
                 </Transition>
-                <span v-if="userStatsFor(item, storeGroup.name)?.isLast" class="last-order-corner">上次點過</span>
+                <span v-if="userStatsFor(item, storeGroup.name)?.isLast" class="last-order-corner">{{ t('dish.lastOrdered') }}</span>
                 <span class="card-name">{{ item.name }}</span>
                 <span v-if="optionHint(item)" class="card-options">{{ optionHint(item) }}</span>
                 <div class="card-meta-row">
                   <span class="card-price">
-                    {{ formatMoney(item.price) }}<span v-if="priceFromLabel(item)" class="card-unit"> 起</span><span v-if="item.unit" class="card-unit"> / {{ item.unit }}</span>
+                    {{ formatMoney(item.price) }}<span v-if="priceFromLabel(item)" class="card-unit">{{ t('dish.priceFrom') }}</span><span v-if="item.unit" class="card-unit"> / {{ item.unit }}</span>
                   </span>
                   <button
                     type="button"
                     class="image-search-btn"
                     @keydown.enter.stop
                     @keydown.space.stop
-                    title="查看餐點資訊"
-                    aria-label="查看餐點資訊"
+                    :title="t('dish.info')"
+                    :aria-label="t('dish.info')"
                     @click.stop="openDishImageSearch(item, storeGroup.name)"
                   >
                     <i class="fas fa-info"></i>
@@ -240,19 +249,19 @@ function openDishImageSearch(item, storeName = '') {
     <template v-else>
       <div v-if="!store" class="placeholder">
         <span class="placeholder-icon" aria-hidden="true"><i class="fas fa-store"></i></span>
-        <p>請先選擇店家</p>
-        <p class="sub">從上方的今日店家清單挑一間開始點餐</p>
+        <p>{{ t('dish.pickStore') }}</p>
+        <p class="sub">{{ t('dish.pickStoreHint') }}</p>
       </div>
       <template v-else>
         <div v-if="!hasItems" class="placeholder">
           <span class="placeholder-icon" aria-hidden="true"><i class="fas fa-utensils"></i></span>
-          <p>此店家尚未設定菜單</p>
-          <p class="sub">請在右側購物車手動輸入餐點</p>
+          <p>{{ t('dish.noMenu') }}</p>
+          <p class="sub">{{ t('dish.noMenuHint') }}</p>
         </div>
         <div v-else-if="categoryGroups.length === 0" class="placeholder">
           <span class="placeholder-icon" aria-hidden="true"><i class="fas fa-magnifying-glass"></i></span>
-          <p>沒有找到「{{ searchQuery }}」的餐點</p>
-          <p class="sub">換個關鍵字，或清除搜尋看完整菜單</p>
+          <p>{{ t('dish.noResults', { query: searchQuery }) }}</p>
+          <p class="sub">{{ t('dish.noResultsClear') }}</p>
         </div>
         <div v-else class="categorized-menu">
           <div ref="categoryToolbar" class="category-toolbar">
@@ -266,15 +275,15 @@ function openDishImageSearch(item, storeName = '') {
               :class="{ active: selectedCategory === category }"
               @click="selectCategory(category, $event)"
             >
-              {{ category }}
+              {{ categoryTabLabel(category) }}
             </button>
           </div>
 
           </div>
           <section v-for="categoryGroup in categoryGroups" :key="categoryGroup.category" class="category-section">
             <div class="category-heading">
-              <span>{{ categoryGroup.category }}</span>
-              <span class="category-count">{{ categoryGroup.items.length }} 項</span>
+              <span>{{ menuCategoryLabel(categoryGroup.category) }}</span>
+              <span class="category-count">{{ t('dish.itemCount', { count: categoryGroup.items.length }) }}</span>
             </div>
             <div class="card-grid">
               <div
@@ -284,7 +293,7 @@ function openDishImageSearch(item, storeName = '') {
                 :class="{ 'in-cart': cartCountFor(item) > 0, 'has-last-order': userStatsFor(item)?.isLast }"
                 role="button"
                 tabindex="0"
-                :aria-label="`${item.name}，${formatMoney(item.price)}${priceFromLabel(item) ? ' 起' : ''}${optionHint(item) ? `，${optionHint(item)}` : priceFromLabel(item) ? '，選擇規格' : '，選擇備註與加料'}`"
+                :aria-label="cardAria(item)"
                 @click.stop="onCardClick(item)"
                 @keydown.enter.prevent="onCardClick(item)"
                 @keydown.space.prevent="onCardClick(item)"
@@ -300,20 +309,20 @@ function openDishImageSearch(item, storeName = '') {
                     <span class="card-badge">{{ cartCountFor(item) }}</span>
                   </span>
                 </Transition>
-                <span v-if="userStatsFor(item)?.isLast" class="last-order-corner">上次點過</span>
+                <span v-if="userStatsFor(item)?.isLast" class="last-order-corner">{{ t('dish.lastOrdered') }}</span>
                 <span class="card-name">{{ item.name }}</span>
                 <span v-if="optionHint(item)" class="card-options">{{ optionHint(item) }}</span>
                 <div class="card-meta-row">
                   <span class="card-price">
-                    {{ formatMoney(item.price) }}<span v-if="priceFromLabel(item)" class="card-unit"> 起</span><span v-if="item.unit" class="card-unit"> / {{ item.unit }}</span>
+                    {{ formatMoney(item.price) }}<span v-if="priceFromLabel(item)" class="card-unit">{{ t('dish.priceFrom') }}</span><span v-if="item.unit" class="card-unit"> / {{ item.unit }}</span>
                   </span>
                   <button
                     type="button"
                     class="image-search-btn"
                     @keydown.enter.stop
                     @keydown.space.stop
-                    title="查看餐點資訊"
-                    aria-label="查看餐點資訊"
+                    :title="t('dish.info')"
+                    :aria-label="t('dish.info')"
                     @click.stop="openDishImageSearch(item)"
                   >
                     <i class="fas fa-info"></i>

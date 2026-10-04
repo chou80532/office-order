@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import StatusNotice from '../ui/StatusNotice.vue'
 import LoadingState from '../ui/LoadingState.vue'
 import { useFirestore } from '../../composables/useFirestore'
@@ -13,6 +13,8 @@ import { cancelOrdersWithWalletRefundViaFunction } from '../../services/walletFu
 import { db } from '../../firestore'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import MenuPreviewModal from './MenuPreviewModal.vue'
+import { compareText } from '../../utils/format'
+import { t, translateError } from '../../i18n'
 
 const props = defineProps({
   allStores: { type: Array, default: () => [] },
@@ -23,7 +25,7 @@ const props = defineProps({
 const emit = defineEmits(['show-toast', 'close', 'update:search'])
 
 const { dailyStores, dailyFreeStores, menuLoading, todayOrders, diningDay, diningLoading, diningError, dailyStoresReady, dailyStoresError, ordersLoading } = useFirestore()
-const { userUid } = useAuth()
+const { userUid, isAdmin } = useAuth()
 const selected = ref([])
 const freeSelected = ref([])
 const settingsBaseline = ref(null)
@@ -122,8 +124,8 @@ const filtered = computed(() => {
 })
 
 const categories = computed(() => classificationLoading.value ? [] : [
-  { id: 'lunch', label: '🍱 午餐', stores: filtered.value.filter(s => s.category !== 'drink') },
-  { id: 'drink', label: '🧋 飲料', stores: filtered.value.filter(s => s.category === 'drink') },
+  { id: 'lunch', label: t('storeManager.lunch'), stores: filtered.value.filter(s => s.category !== 'drink') },
+  { id: 'drink', label: t('storeManager.drink'), stores: filtered.value.filter(s => s.category === 'drink') },
 ].filter(category => category.stores.length).map(category => ({
   ...category,
   groups: popularityError.value
@@ -131,7 +133,7 @@ const categories = computed(() => classificationLoading.value ? [] : [
     : STORE_POPULARITY_GROUPS.map(group => ({
       ...group,
       stores: category.stores.filter(store => popularity.value.get(store.name)?.group === group.id)
-        .sort((a, b) => popularity.value.get(b.name).count - popularity.value.get(a.name).count || a.name.localeCompare(b.name, 'zh-TW')),
+        .sort((a, b) => popularity.value.get(b.name).count - popularity.value.get(a.name).count || compareText(a.name, b.name)),
     })).filter(group => group.stores.length),
 })))
 
@@ -148,13 +150,19 @@ function toggle(name) {
 }
 
 function toggleFree(name) {
-  if (saving.value || !settingsBaseline.value) return
+  if (saving.value || !settingsBaseline.value || !isAdmin.value) return
   const i = freeSelected.value.indexOf(name)
   i > -1 ? freeSelected.value.splice(i, 1) : freeSelected.value.push(name)
 }
 
+// 免費店家只有管理員能調整；一般成員換店時沿用面板開啟時的免費設定，被移除的店家自然失效。
+const freeStoresToSave = computed(() => {
+  const free = isAdmin.value ? freeSelected.value : (settingsBaseline.value?.freeStores || [])
+  return selected.value.filter(name => free.includes(name))
+})
+
 function isFreeSelected(name) {
-  return freeSelected.value.includes(name)
+  return freeStoresToSave.value.includes(name)
 }
 
 function clearAll() {
@@ -185,7 +193,7 @@ const removedProtected = computed(() => {
 async function save(confirmed = false) {
   if (saving.value) return
   if (!settingsBaseline.value || dailyStoresError.value || ordersLoading.value || diningLoading.value || diningError.value) {
-    emit('show-toast', '尚未取得用餐名單，請稍後再試', 'error')
+    emit('show-toast', t('storeManager.notReady'), 'error')
     return
   }
   if (removedProtected.value.length && confirmed !== true) {
@@ -195,11 +203,11 @@ async function save(confirmed = false) {
     return
   }
   if (removedProtected.value.some(name => !selected.value.includes(replacementTargets.value[name]))) {
-    emit('show-toast', '請為每間移除的店家選擇接替店家；若未選新店，請先返回勾選', 'error')
+    emit('show-toast', t('storeManager.needReplacement'), 'error')
     return
   }
   if (selected.value.some(name => diningDay.value.replacements?.[name])) {
-    emit('show-toast', '今日已更換停用的店家不可重新開放', 'error')
+    emit('show-toast', t('storeManager.replacedCannotReopen'), 'error')
     return
   }
   saving.value = true
@@ -208,44 +216,44 @@ async function save(confirmed = false) {
       storeReplacements: removedProtected.value.map(source => ({ source, target: replacementTargets.value[source] })),
       dailyStoreSettings: {
         activeStores: [...selected.value],
-        freeStores: selected.value.filter(name => freeSelected.value.includes(name)),
+        freeStores: [...freeStoresToSave.value],
         expectedActiveStores: settingsBaseline.value.activeStores,
         expectedFreeStores: settingsBaseline.value.freeStores,
         serviceDate: settingsBaseline.value.serviceDate,
       },
-      reason: '設定店家異動退款',
+      reason: t('storeManager.refundReason'),
     })
     // Preset history is only a convenience. Start the write in the background so
     // a slow settings write cannot keep the store manager open after the update.
-    void recordHistory(selected.value, selected.value.filter(name => freeSelected.value.includes(name)))
-    emit('show-toast', '已更新今日店家')
+    void recordHistory(selected.value, freeStoresToSave.value)
+    emit('show-toast', t('storeManager.saved'))
     emit('close')
-  } catch (error) { emit('show-toast', error.message === 'CASH_PAYMENT_ALREADY_COLLECTED' ? '含已收現金訂單，請先撤銷收款再換店' : `儲存失敗：${error.message}。請重新確認今日店家後再試`, 'error') } finally { saving.value = false }
+  } catch (error) { emit('show-toast', error.message === 'CASH_PAYMENT_ALREADY_COLLECTED' ? t('storeManager.cashCollected') : t('storeManager.saveFailed', { message: translateError(error) }), 'error') } finally { saving.value = false }
 }
 </script>
 
 <template>
   <div class="store-mgr-panel">
-    <ConfirmDialog :open="replacementOpen" title="更換今日店家" message="原餐點將取消並退款，受影響人員保留為待重新點餐。" confirm-text="確認換店並套用" :loading="saving" autofocus="none" @confirm="save(true)" @cancel="replacementOpen = false">
+    <ConfirmDialog :open="replacementOpen" :title="t('storeManager.replaceTitle')" :message="t('storeManager.replaceMessage')" :confirm-text="t('storeManager.replaceConfirm')" :loading="saving" autofocus="none" @confirm="save(true)" @cancel="replacementOpen = false">
       <div v-for="source in removedProtected" :key="source" class="replacement-row">
         <span>{{ source }} →</span>
-        <AppSelect v-model="replacementTargets[source]" :disabled="saving" :label="`${source} 的接替店家`" placeholder="選擇接替店家" :options="selected.map(name => ({ value: name, label: name }))" />
+        <AppSelect v-model="replacementTargets[source]" :disabled="saving" :label="t('storeManager.replacementLabel', { store: source })" :placeholder="t('storeManager.replacementPlaceholder')" :options="selected.map(name => ({ value: name, label: name }))" />
       </div>
-      <p>補點可從點餐頁送出，或在今日訂單重新點餐／代點。新餐點依今日免費設定計費。</p>
+      <p>{{ t('storeManager.replaceHint') }}</p>
     </ConfirmDialog>
     <div class="panel-header">
-      <span class="selected-count">已選 {{ selected.length }} 家</span>
+      <span class="selected-count">{{ t('storeManager.selectedCount', { count: selected.length }) }}</span>
       <div class="header-actions">
-        <button class="action-btn" @click="clearAll" :disabled="saving || !selected.length">清除全選</button>
-        <button class="action-btn" :disabled="saving" @click="emit('close')">取消</button>
+        <button class="action-btn" @click="clearAll" :disabled="saving || !selected.length">{{ t('storeManager.clearAll') }}</button>
+        <button class="action-btn" :disabled="saving" @click="emit('close')">{{ t('common.cancel') }}</button>
         <button class="action-btn primary" @click="save" :disabled="saving || !settingsBaseline">
-          {{ saving ? '儲存中…' : '套用設定' }}
+          {{ saving ? t('common.saving') : t('storeManager.apply') }}
         </button>
       </div>
     </div>
 
     <p v-if="replacementSource" class="replacement-hint" role="status">
-      正在更換「{{ replacementSource }}」，已先取消勾選。請選擇接替店家，再按「套用設定」確認；確認前不會變更訂單。
+      {{ t('storeManager.replacingHint', { store: replacementSource }) }}
     </p>
     <div class="store-search-bar">
       <label class="store-search-field app-search-shell" for="today-store-search">
@@ -255,7 +263,7 @@ async function save(confirmed = false) {
           :value="storeSearch"
           type="search"
           autocomplete="off"
-          placeholder="搜尋店家名稱..."
+          :placeholder="t('storeManager.searchPlaceholder')"
           @input="updateStoreSearch"
           @keyup.escape="clearSearch"
         />
@@ -263,13 +271,13 @@ async function save(confirmed = false) {
           v-if="storeSearch"
           class="search-clear app-search-clear"
           type="button"
-          aria-label="清除搜尋"
+          :aria-label="t('common.clearSearch')"
           @click="clearSearch"
         >
           ×
         </button>
       </label>
-      <span class="search-result-count">顯示 {{ filtered.length }} / {{ allStores.length }} 家</span>
+      <span class="search-result-count">{{ t('storeManager.resultCount', { shown: filtered.length, total: allStores.length }) }}</span>
     </div>
 
     <!-- Selected chips -->
@@ -277,32 +285,33 @@ async function save(confirmed = false) {
       <span v-for="name in selected" :key="name" class="chip" :class="{ 'chip-free': isFreeSelected(name) }">
         {{ name }}
         <button
+          v-if="isAdmin"
           type="button"
           class="chip-free-toggle"
           :class="{ on: isFreeSelected(name) }"
-          :title="isFreeSelected(name) ? '今日免費，點擊改回收費' : '設為今日免費'"
+          :title="isFreeSelected(name) ? t('storeManager.freeOn') : t('storeManager.freeOff')"
           :aria-pressed="isFreeSelected(name)"
           @click="toggleFree(name)"
-        >免費</button>
-        <button type="button" class="chip-remove" :aria-label="`移除 ${name}`" @click="toggle(name)">×</button>
+        >{{ t('storeManager.free') }}</button>
+        <button type="button" class="chip-remove" :aria-label="t('storeManager.removeStore', { store: name })" @click="toggle(name)">×</button>
       </span>
-      <p v-if="freeSelected.length" class="free-hint">免費店家今天點餐不扣錢包、不列現金應收，金額僅供紀錄</p>
+      <p v-if="freeStoresToSave.length" class="free-hint">{{ t('storeManager.freeHint') }}</p>
     </div>
 
     <div class="store-list">
-      <LoadingState v-if="classificationLoading" compact title="正在準備店家分類…" />
+      <LoadingState v-if="classificationLoading" compact :title="t('storeManager.classifying')" />
       <p v-else-if="popularityError" class="popularity-status" role="status">
-        暫時無法載入訂購分類，仍可選擇店家。
-        <button type="button" class="action-btn" @click="loadPopularity">重試</button>
+        {{ t('storeManager.classifyFailed') }}
+        <button type="button" class="action-btn" @click="loadPopularity">{{ t('common.retry') }}</button>
       </p>
-      <p v-else class="popularity-status">依全體近 30 天訂購紀錄分類</p>
+      <p v-else class="popularity-status">{{ t('storeManager.classifiedBy') }}</p>
       <div v-for="category in categories" :key="category.id" class="category-section">
         <h3 class="cat-label">{{ category.label }}</h3>
         <section v-for="group in category.groups" :key="group.id" class="popularity-section" :class="group.id">
           <div v-if="group.label" class="popularity-heading">
             <h4>{{ group.label }}</h4>
             <span>{{ group.description }}</span>
-            <span class="group-size">{{ group.stores.length }} 家</span>
+            <span class="group-size">{{ t('storeManager.storeCount', { count: group.stores.length }) }}</span>
           </div>
           <div class="store-grid">
             <div
@@ -322,13 +331,13 @@ async function save(confirmed = false) {
               </span>
               <span class="store-card-name">{{ store.name }}</span>
               <div class="store-card-meta">
-                <span class="store-card-count">{{ store.menuItems?.length || 0 }} 項</span>
+                <span class="store-card-count">{{ t('storeManager.itemCount', { count: store.menuItems?.length || 0 }) }}</span>
                 <button
                   v-if="hasMenuImages(store)"
                   type="button"
                   class="menu-preview-btn"
-                  title="看菜單"
-                  aria-label="看菜單"
+                  :title="t('storeManager.viewMenu')"
+                  :aria-label="t('storeManager.viewMenu')"
                   @click.stop="openMenuPreview(store)"
                 >
                   <i class="fas fa-info" aria-hidden="true"></i>
@@ -339,7 +348,7 @@ async function save(confirmed = false) {
         </section>
       </div>
 
-      <StatusNotice v-if="!classificationLoading && !filtered.length" title="無符合的店家" description="調整搜尋關鍵字或分類篩選。" />
+      <StatusNotice v-if="!classificationLoading && !filtered.length" :title="t('storeManager.noMatchTitle')" :description="t('storeManager.noMatchText')" />
     </div>
 
     <MenuPreviewModal v-if="previewStore" :store="previewStore" @close="closeMenuPreview" />

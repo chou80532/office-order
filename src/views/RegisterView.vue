@@ -1,126 +1,240 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import { useToast } from '../composables/useToast'
+import { useBranding } from '../composables/useBranding'
+import { usePublicConfig } from '../composables/usePublicConfig'
+import { firebaseAuthMessage } from '../utils/authErrors'
+import { normalizeEmailDomain } from '../utils/systemSettings'
+import { MAX_NAME_LENGTH } from '../constants'
+import { t } from '../i18n'
 
 const router = useRouter()
-const { register } = useAuth()
+const {
+  register, registerWithEmail, signInWithGoogle, completeRegistration,
+  refreshEmailVerification, resendEmailVerification, cancelPendingRegistration, pendingRegistration,
+} = useAuth()
 const { showToast } = useToast()
+const { brandName, brandLogo } = useBranding()
+const { publicConfig, loadPublicConfig } = usePublicConfig()
 
+onMounted(loadPublicConfig)
+
+const allowedDomains = computed(() => publicConfig.value.registration.allowedEmailDomains)
+const domainSignupEnabled = computed(() => allowedDomains.value.length > 0)
+const showGoogle = computed(() => publicConfig.value.registration.googleSignIn)
+const domainOf = value => normalizeEmailDomain(String(value || '').split('@').pop())
+
+// invite：邀請碼；domain：公司信箱自助註冊。
+const mode = ref('invite')
 const email = ref('')
 const password = ref('')
 const showPassword = ref(false)
 const inviteCode = ref('')
+const memberName = ref('')
 const loading = ref(false)
+
+// 已通過 Firebase 驗證但還不是成員（Google 首次登入、公司信箱待驗證）。
+const pending = computed(() => pendingRegistration.value)
+const pendingDomainAllowed = computed(() => Boolean(pending.value) && allowedDomains.value.includes(domainOf(pending.value.email)))
+const awaitingVerification = computed(() => Boolean(pending.value) && mode.value === 'domain' && !pending.value.emailVerified)
+const showModeTabs = computed(() => (pending.value ? pendingDomainAllowed.value : domainSignupEnabled.value))
+// 從登入頁轉來、信箱網域可自助註冊時，預設顯示公司信箱分頁。
+watch(pendingDomainAllowed, (allowed) => { if (allowed) mode.value = 'domain' }, { immediate: true })
 
 function onInviteInput(e) { inviteCode.value = e.target.value.toUpperCase() }
 
 const PW_LEVELS = [
-  { label: '弱',   color: 'var(--paprika)' },
-  { label: '弱',   color: 'var(--paprika)' },
-  { label: '一般', color: 'var(--gold)'    },
-  { label: '強',   color: 'var(--mint)'    },
-  { label: '很強', color: 'var(--mint)'    },
+  { key: 'weak', color: 'var(--paprika)' },
+  { key: 'weak', color: 'var(--paprika)' },
+  { key: 'fair', color: 'var(--gold)' },
+  { key: 'strong', color: 'var(--mint)' },
+  { key: 'veryStrong', color: 'var(--mint)' },
 ]
 
 const pwStrength = computed(() => {
   const p = password.value
   if (!p.length) return null
   let score = 0
-  if (p.length >= 6)                            score++
-  if (p.length >= 10)                           score++
-  if (/[0-9]/.test(p))                          score++
+  if (p.length >= 6) score++
+  if (p.length >= 10) score++
+  if (/[0-9]/.test(p)) score++
   if (/[A-Z]/.test(p) || /[^a-zA-Z0-9]/.test(p)) score++
   const s = Math.min(score, 4)
-  return { score: s, ...PW_LEVELS[s] }
+  return { score: s, label: t(`auth.strength.${PW_LEVELS[s].key}`), color: PW_LEVELS[s].color }
 })
 
-const ERROR_MAP = {
-  INVALID_CODE: '邀請碼無效',
-  CODE_USED: '邀請碼已使用',
-  CODE_EXPIRED: '邀請碼已過期',
-  MEMBER_NAME_TAKEN: '此成員姓名已綁定其他帳號',
-  INVALID_MEMBER_NAME: '邀請碼的成員姓名無效',
-  EMAIL_EXISTS: '此 Email 已被註冊',
-  'auth/weak-password': '密碼至少需要 6 個字元'
+const fail = err => showToast(firebaseAuthMessage(err, 'auth.register.failed'), 'error')
+
+function finish() {
+  showToast(t('auth.register.success'), 'success')
+  router.push('/')
 }
 
-async function handleRegister() {
+async function run(task) {
   if (loading.value) return
   loading.value = true
   try {
-    await register(email.value.trim(), password.value, inviteCode.value.trim())
-    showToast('註冊成功！', 'success')
-    router.push('/')
+    await task()
   } catch (err) {
-    showToast(ERROR_MAP[err.message] || ERROR_MAP[err.code] || '註冊失敗', 'error')
+    fail(err)
   } finally {
     loading.value = false
   }
 }
+
+const handleInviteRegister = () => run(async () => {
+  await register(email.value.trim(), password.value, inviteCode.value.trim())
+  finish()
+})
+
+const handleDomainRegister = () => run(async () => {
+  if (!allowedDomains.value.includes(domainOf(email.value))) {
+    showToast(t('auth.register.domainNotAllowed'), 'error')
+    return
+  }
+  await registerWithEmail(email.value.trim(), password.value)
+})
+
+const handleVerified = () => run(async () => {
+  if (!await refreshEmailVerification()) {
+    showToast(t('auth.register.notVerifiedYet'), 'error')
+    return
+  }
+  await completeRegistration({ memberName: memberName.value })
+  finish()
+})
+
+const handleResend = () => run(async () => {
+  await resendEmailVerification()
+  showToast(t('auth.register.verifyResent'), 'success')
+})
+
+const handleCompletePending = () => run(async () => {
+  await completeRegistration(mode.value === 'invite' ? { inviteCode: inviteCode.value } : { memberName: memberName.value })
+  finish()
+})
+
+const handleGoogle = () => run(async () => {
+  const result = await signInWithGoogle()
+  if (!result.needsRegistration) {
+    router.push('/')
+    return
+  }
+  mode.value = allowedDomains.value.includes(domainOf(pendingRegistration.value?.email)) ? 'domain' : 'invite'
+})
+
+const handleUseAnotherAccount = () => run(async () => {
+  await cancelPendingRegistration()
+  mode.value = 'invite'
+})
 </script>
 
 <template>
   <div class="login-page">
     <div class="login-card">
       <div class="login-brand">
-        <img class="brand-mark" src="/office-lunch.svg" alt="" />
-        <span class="brand-name">Office Order</span>
+        <img class="brand-mark" :src="brandLogo" alt="" />
+        <span class="brand-name">{{ brandName }}</span>
       </div>
 
-      <h1 class="login-title">使用邀請碼註冊</h1>
+      <h1 class="login-title">{{ pending ? (awaitingVerification ? t('auth.register.verifyTitle') : t('auth.register.completeTitle')) : t('auth.register.title') }}</h1>
 
-      <form class="login-form" @submit.prevent="handleRegister">
+      <div v-if="showModeTabs && !awaitingVerification" class="mode-tabs" role="tablist">
+        <button type="button" role="tab" :aria-selected="mode === 'invite'" :class="{ active: mode === 'invite' }" @click="mode = 'invite'">
+          {{ t('auth.register.inviteTab') }}
+        </button>
+        <button type="button" role="tab" :aria-selected="mode === 'domain'" :class="{ active: mode === 'domain' }" @click="mode = 'domain'">
+          {{ t('auth.register.domainTab') }}
+        </button>
+      </div>
+
+      <!-- 公司信箱：等待使用者點擊驗證信 -->
+      <div v-if="awaitingVerification" class="login-form">
+        <p class="intro">{{ t('auth.register.verifyIntro', { email: pending.email }) }}</p>
         <div class="field">
-          <label class="label">邀請碼</label>
+          <label class="label" for="verify-name">{{ t('auth.register.nameLabel') }}</label>
+          <input id="verify-name" v-model="memberName" type="text" class="input" :maxlength="MAX_NAME_LENGTH" :placeholder="t('auth.register.namePlaceholder')" required />
+        </div>
+        <button type="button" class="submit-btn" :disabled="loading || !memberName.trim()" @click="handleVerified">
+          {{ loading ? t('auth.register.verifyChecking') : t('auth.register.verifyDone') }}
+        </button>
+        <button type="button" class="text-btn" :disabled="loading" @click="handleResend">{{ t('auth.register.verifyResend') }}</button>
+        <button type="button" class="text-btn" :disabled="loading" @click="handleUseAnotherAccount">{{ t('auth.register.useAnotherAccount') }}</button>
+      </div>
+
+      <!-- 已登入但尚未成為成員：補上邀請碼或姓名 -->
+      <form v-else-if="pending" class="login-form" @submit.prevent="handleCompletePending">
+        <p class="intro">{{ t('auth.register.completeIntro', { email: pending.email }) }}</p>
+        <div v-if="mode === 'invite'" class="field">
+          <label class="label" for="pending-invite">{{ t('auth.register.inviteLabel') }}</label>
+          <input id="pending-invite" v-model="inviteCode" type="text" class="input mono" :placeholder="t('auth.register.invitePlaceholder')" maxlength="6" autocomplete="off" style="text-transform: uppercase" required @input="onInviteInput" />
+        </div>
+        <div v-else class="field">
+          <label class="label" for="pending-name">{{ t('auth.register.nameLabel') }}</label>
+          <input id="pending-name" v-model="memberName" type="text" class="input" :maxlength="MAX_NAME_LENGTH" :placeholder="t('auth.register.namePlaceholder')" required />
+        </div>
+        <button type="submit" class="submit-btn" :disabled="loading">
+          {{ loading ? t('auth.register.submitting') : t('auth.register.completeSubmit') }}
+        </button>
+        <button type="button" class="text-btn" :disabled="loading" @click="handleUseAnotherAccount">{{ t('auth.register.useAnotherAccount') }}</button>
+      </form>
+
+      <!-- 新帳號 -->
+      <form v-else class="login-form" @submit.prevent="mode === 'invite' ? handleInviteRegister() : handleDomainRegister()">
+        <div v-if="mode === 'invite'" class="field">
+          <label class="label" for="register-invite">{{ t('auth.register.inviteLabel') }}</label>
           <input
+            id="register-invite"
             v-model="inviteCode"
             type="text"
             class="input mono"
-            placeholder="XXXXXX"
+            :placeholder="t('auth.register.invitePlaceholder')"
             maxlength="6"
             autocomplete="off"
             style="text-transform: uppercase"
-            @input="onInviteInput"
             required
+            @input="onInviteInput"
           />
         </div>
 
+        <template v-else>
+          <p class="intro">{{ t('auth.register.domainHint', { domains: allowedDomains.join(', ') }) }}</p>
+          <div class="field">
+            <label class="label" for="register-name">{{ t('auth.register.nameLabel') }}</label>
+            <input id="register-name" v-model="memberName" type="text" class="input" :maxlength="MAX_NAME_LENGTH" :placeholder="t('auth.register.namePlaceholder')" required />
+          </div>
+        </template>
+
         <div class="field">
-          <label class="label">Email</label>
+          <label class="label" for="register-email">{{ t('auth.emailLabel') }}</label>
           <input
+            id="register-email"
             v-model="email"
             type="email"
             class="input"
-            placeholder="you@example.test"
+            :placeholder="t('auth.emailPlaceholder')"
             autocomplete="email"
             required
           />
         </div>
 
         <div class="field">
-          <label class="label">密碼</label>
+          <label class="label" for="register-password">{{ t('auth.passwordLabel') }}</label>
           <div class="input-wrap">
             <input
+              id="register-password"
               v-model="password"
               :type="showPassword ? 'text' : 'password'"
               class="input"
-              placeholder="至少 6 個字元"
+              :placeholder="t('auth.passwordPlaceholder')"
               minlength="6"
               autocomplete="new-password"
               required
             />
-            <button type="button" class="eye-btn" @click="showPassword = !showPassword" tabindex="-1" aria-label="切換顯示密碼">
-              <svg v-if="showPassword" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-                <line x1="1" y1="1" x2="23" y2="23"/>
-              </svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                <circle cx="12" cy="12" r="3"/>
-              </svg>
+            <button type="button" class="eye-btn" tabindex="-1" :aria-label="t('auth.togglePassword')" @click="showPassword = !showPassword">
+              <i :class="['fas', showPassword ? 'fa-eye-slash' : 'fa-eye']" aria-hidden="true"></i>
             </button>
           </div>
           <Transition name="strength">
@@ -138,12 +252,19 @@ async function handleRegister() {
         </div>
 
         <button type="submit" class="submit-btn" :disabled="loading">
-          {{ loading ? '註冊中…' : '建立帳號' }}
+          {{ loading ? t('auth.register.submitting') : t('auth.register.submit') }}
         </button>
+
+        <template v-if="showGoogle">
+          <div class="or-divider"><span>{{ t('auth.or') }}</span></div>
+          <button type="button" class="google-btn" :disabled="loading" @click="handleGoogle">
+            <i class="fab fa-google" aria-hidden="true"></i> {{ t('auth.googleRegister') }}
+          </button>
+        </template>
       </form>
 
       <p class="register-link">
-        已有帳號？ <RouterLink to="/login">登入</RouterLink>
+        {{ t('auth.register.haveAccount') }} <RouterLink to="/login">{{ t('auth.register.loginLink') }}</RouterLink>
       </p>
     </div>
   </div>
@@ -162,7 +283,7 @@ async function handleRegister() {
 
 .login-card {
   width: 100%;
-  max-width: 380px;
+  max-width: 400px;
   border: 1.5px solid var(--muted-line);
   padding: 32px;
 }
@@ -188,8 +309,28 @@ async function handleRegister() {
   font-weight: 900;
   color: var(--ink);
   letter-spacing: -0.3px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
+
+.mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 20px;
+  border-radius: var(--r-md);
+  background: var(--paper-2);
+}
+.mode-tabs button {
+  padding: 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: 700;
+}
+.mode-tabs button.active { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 15%, transparent); }
+
+.intro { font-size: var(--text-label); line-height: 1.6; color: var(--text-secondary); overflow-wrap: anywhere; }
 
 .login-form { display: flex; flex-direction: column; gap: 16px; }
 
@@ -226,6 +367,45 @@ async function handleRegister() {
 
 .submit-btn:hover:not(:disabled) { opacity: 0.88; }
 .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.text-btn {
+  align-self: center;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font-size: var(--text-label);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.text-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.or-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+.or-divider::before, .or-divider::after { content: ''; flex: 1; border-top: 1px solid var(--muted-line); }
+
+.google-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 12px;
+  border: 1.5px solid var(--muted-line);
+  border-radius: var(--r-md);
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: var(--text-body);
+}
+.google-btn:hover:not(:disabled) { border-color: var(--ink); }
+.google-btn:disabled { opacity: .5; cursor: not-allowed; }
 
 .register-link {
   margin-top: 20px;
@@ -305,4 +485,3 @@ async function handleRegister() {
 .login-title, .brand-name { font-family: var(--font-display); }
 .submit-btn { background: var(--accent-solid); color: var(--paper); border-radius: 4px; }
 </style>
-

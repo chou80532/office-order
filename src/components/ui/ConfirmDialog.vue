@@ -1,16 +1,17 @@
 <script setup>
 import { ref, watch, nextTick, onUnmounted } from 'vue'
 import { useScrollLock } from '../../composables/useScrollLock'
+import { t } from '../../i18n'
 
 // 站內統一的確認對話框：取代原生 confirm()，
 // 危險操作（刪除、清空）請使用 variant="danger"。
 const props = defineProps({
   open:        { type: Boolean, default: false },
-  title:       { type: String,  default: '確認操作' },
+  title:       { type: String,  default: '' },
   message:     { type: String,  default: '' },
   detail:      { type: String,  default: '' },
-  confirmText: { type: String,  default: '確認' },
-  cancelText:  { type: String,  default: '取消' },
+  confirmText: { type: String,  default: '' },
+  cancelText:  { type: String,  default: '' },
   variant:     { type: String,  default: 'primary' }, // 'primary' | 'danger'
   loading:     { type: Boolean, default: false },
   autofocus:   { type: String,  default: 'cancel' }   // 'cancel' | 'none'（含輸入框時由外部自行聚焦）
@@ -104,7 +105,7 @@ useScrollLock(() => props.open)
               class="confirm-btn cancel"
               :disabled="loading"
               @click="emit('cancel')"
-            >{{ cancelText }}</button>
+            >{{ cancelText || t('common.cancel') }}</button>
             <button
               type="button"
               class="confirm-btn"
@@ -113,7 +114,7 @@ useScrollLock(() => props.open)
               @click="emit('confirm')"
             >
               <span v-if="loading" class="confirm-spinner" aria-hidden="true"></span>
-              {{ loading ? '處理中…' : confirmText }}
+              {{ loading ? t('ui.processing') : confirmText || t('common.confirm') }}
             </button>
           </div>
         </div>

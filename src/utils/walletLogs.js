@@ -4,6 +4,15 @@
 // 顯示層依 editGroupId 把配對收合成一列淨額，避免使用者誤讀。
 // ==========================================
 
+import { t, te } from '../i18n'
+
+/** 交易類型的顯示名稱；未知類型直接顯示原始代碼。 */
+export const walletLogTypeLabel = type => (te(`wallet.types.${type}`) ? t(`wallet.types.${type}`) : String(type || ''))
+export const WALLET_LOG_TYPES = [
+  'top_up', 'allowance_credit', 'order_debit', 'cancel_refund', 'admin_adjustment', 'free_debit', 'free_refund',
+  'free_order', 'order_edit', 'order_edit_refund', 'order_edit_debit', 'cash_adjustment',
+]
+
 export const EDIT_LOG_TYPES = new Set(['order_edit_refund', 'order_edit_debit'])
 
 export const MERGED_EDIT_TYPE = 'order_edit'
@@ -75,7 +84,7 @@ export const mergeEditLogPairs = (logs) => {
       ownerUid: debit.ownerUid || refund.ownerUid || '',
       operatorName: debit.operatorName || refund.operatorName || '',
       storeName: debit.storeName || refund.storeName || '',
-      reason: mealChangeText ? `訂單編輯調整｜${mealChangeText}` : '訂單編輯調整',
+      reason: mealChangeText ? t('data.walletEditReasonDetail', { change: mealChangeText }) : t('data.walletEditReason'),
       orderId: debit.orderId || refund.orderId || '',
       orderIds: debit.orderIds || refund.orderIds || [],
       items: Array.isArray(debit.items) ? debit.items : [],
@@ -108,7 +117,7 @@ export const composeLogDescription = (log, actionLabel = '') => {
       const meal = String(item?.meal || '').trim()
       if (!meal) return ''
       const note = String(item?.note || '').trim()
-      return note ? `${meal}（${note}）` : meal
+      return note ? t('data.mealWithNote', { meal, note }) : meal
     })
     .filter(Boolean)
 
@@ -119,6 +128,6 @@ export const composeLogDescription = (log, actionLabel = '') => {
   const parts = []
   if (action) parts.push(action)
   if (store) parts.push(store)
-  if (meals.length) parts.push(meals.join('、'))
-  return parts.join('｜')
+  if (meals.length) parts.push(meals.join(t('common.listSeparator')))
+  return parts.join(t('data.descriptionSeparator'))
 }

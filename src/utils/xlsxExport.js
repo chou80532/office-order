@@ -1,3 +1,4 @@
+import { excelMoneyFormat } from './format'
 const colors = {
   navy: 'FF24324A',
   blue: 'FF3F6F8F',
@@ -53,7 +54,8 @@ function styleSheet(sheet, config) {
     valueCell.value = Number(item.value) || 0
     labelCell.font = { bold: true, color: { argb: colors.muted } }
     valueCell.font = { bold: true, color: { argb: colors.text } }
-    valueCell.numFmt = '#,##0;[Red]-#,##0;0'
+    // 摘要預設是金額；筆數之類的數字可自帶 numFmt。
+    valueCell.numFmt = item.numFmt || excelMoneyFormat()
     labelCell.fill = valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF4F7FA' } }
     labelCell.border = valueCell.border = thinBorder
   })

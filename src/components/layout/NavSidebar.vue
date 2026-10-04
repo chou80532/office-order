@@ -8,6 +8,10 @@ import { useHomeActions } from '../../composables/useHomeActions'
 import { useSettingsTab } from '../../composables/useSettingsTab'
 import { useSidebarState } from '../../composables/useSidebarState'
 import { useScrollLock } from '../../composables/useScrollLock'
+import { useFirestore } from '../../composables/useFirestore'
+import { useBranding } from '../../composables/useBranding'
+import { t } from '../../i18n'
+import PersonalSettingsModal from './PersonalSettingsModal.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -16,6 +20,12 @@ const { showToast } = useToast()
 const { activePanel, openStatsPanel } = useHomeActions()
 const { activeTab } = useSettingsTab()
 const { collapsed } = useSidebarState()
+const { systemSettings } = useFirestore()
+const { brandName, brandLogo } = useBranding()
+const personalOpen = ref(false)
+// 停用錢包時隱藏成員的錢包頁與管理員的儲值分頁；停用現金時隱藏現金收款分頁。
+const walletEnabled = computed(() => systemSettings.value.paymentMethods.wallet)
+const cashEnabled = computed(() => systemSettings.value.paymentMethods.cash)
 const avatarInitial = computed(() => userDisplayName.value.trim().charAt(0).toUpperCase())
 const hasProfilePreview = computed(() => !!userDisplayName.value.trim())
 
@@ -105,14 +115,18 @@ function goStatsPanel() {
   if (route.path !== '/') router.push('/')
 }
 
-const settingsItems = [
-  { id: 'stores',  icon: 'fa-store',          label: '店家管理' },
-  { id: 'members', icon: 'fa-users',           label: '成員名單' },
-  { id: 'wallet',  icon: 'fa-piggy-bank',      label: '儲值錢包' },
-  { id: 'cash',    icon: 'fa-money-bill-wave', label: '現金收款' },
-  { id: 'notes',   icon: 'fa-pen-to-square',   label: '快捷備註' },
-  { id: 'cleanup', icon: 'fa-trash-can',        label: '舊檔清理' },
+const allSettingsItems = [
+  { id: 'stores',  icon: 'fa-store' },
+  { id: 'members', icon: 'fa-users' },
+  { id: 'wallet',  icon: 'fa-piggy-bank' },
+  { id: 'cash',    icon: 'fa-money-bill-wave' },
+  { id: 'notes',   icon: 'fa-pen-to-square' },
+  { id: 'cleanup', icon: 'fa-trash-can' },
+  { id: 'system',  icon: 'fa-sliders' },
 ]
+const settingsItems = computed(() => allSettingsItems
+  .filter(item => (item.id !== 'wallet' || walletEnabled.value) && (item.id !== 'cash' || cashEnabled.value))
+  .map(item => ({ ...item, label: t(`settings.tabs.${item.id}.label`) })))
 
 function goSettings(tabId) {
   activeTab.value = tabId
@@ -139,11 +153,11 @@ const pwIsDirty = () => Object.values(pwForm.value).some(value => value.length >
 async function closePwPanel({ force = false } = {}) {
   if (pwLoading.value) return
   if (!force && pwIsDirty() && !await confirmDialog({
-    title: '放棄修改密碼？',
-    message: '已經填了一部分，關掉就要重打。',
+    title: t('nav.password.discardTitle'),
+    message: t('nav.password.discardMessage'),
     variant: 'danger',
-    confirmText: '放棄',
-    cancelText: '繼續填',
+    confirmText: t('nav.password.discard'),
+    cancelText: t('nav.password.keepEditing'),
   })) return
   pwOpen.value = false
   resetPwForm()
@@ -154,11 +168,11 @@ function togglePwVisibility(field) {
 }
 
 const PW_LEVELS = [
-  { label: '弱',   color: 'var(--paprika)' },
-  { label: '弱',   color: 'var(--paprika)' },
-  { label: '一般', color: 'var(--gold)'    },
-  { label: '強',   color: 'var(--mint)'    },
-  { label: '很強', color: 'var(--mint)'    },
+  { key: 'weak',       color: 'var(--paprika)' },
+  { key: 'weak',       color: 'var(--paprika)' },
+  { key: 'fair',       color: 'var(--gold)'    },
+  { key: 'strong',     color: 'var(--mint)'    },
+  { key: 'veryStrong', color: 'var(--mint)'    },
 ]
 
 const pwStrength = computed(() => {
@@ -170,20 +184,20 @@ const pwStrength = computed(() => {
   if (/[0-9]/.test(p))                            score++
   if (/[A-Z]/.test(p) || /[^a-zA-Z0-9]/.test(p))  score++
   const s = Math.min(score, 4)
-  return { score: s, ...PW_LEVELS[s] }
+  return { score: s, label: t(`auth.strength.${PW_LEVELS[s].key}`), color: PW_LEVELS[s].color }
 })
 
 async function handleChangePassword() {
-  if (pwForm.value.next !== pwForm.value.confirm) { showToast('兩次密碼不一致', 'error'); return }
-  if (pwForm.value.next.length < 6) { showToast('密碼至少 6 個字元', 'error'); return }
+  if (pwForm.value.next !== pwForm.value.confirm) { showToast(t('nav.password.mismatch'), 'error'); return }
+  if (pwForm.value.next.length < 6) { showToast(t('nav.password.tooShort'), 'error'); return }
   pwLoading.value = true
   try {
     await changePassword(pwForm.value.current, pwForm.value.next)
-    showToast('密碼已更新', 'success')
+    showToast(t('nav.password.updated'), 'success')
     pwOpen.value = false
     resetPwForm()
   } catch (err) {
-    const msg = err.code === 'auth/wrong-password' ? '目前密碼錯誤' : '修改失敗'
+    const msg = ['auth/wrong-password', 'auth/invalid-credential'].includes(err.code) ? t('nav.password.wrongCurrent') : t('nav.password.failed')
     showToast(msg, 'error')
   } finally {
     pwLoading.value = false
@@ -202,10 +216,10 @@ async function handleLogout() {
     <!-- Brand + toggle -->
     <div class="sidebar-top">
       <div class="sidebar-brand">
-          <span class="brand-tile" aria-hidden="true"><img src="/office-lunch.svg" alt="" /></span>
+          <span class="brand-tile" aria-hidden="true"><img :src="brandLogo" alt="" /></span>
         <span class="brand-text">
-          <span class="brand-name">Office Order</span>
-          <span class="brand-sub">辦公室團體訂購</span>
+          <span class="brand-name">{{ brandName }}</span>
+          <span class="brand-sub">{{ t('nav.brandSub') }}</span>
         </span>
       </div>
 
@@ -220,62 +234,63 @@ async function handleLogout() {
         class="nav-item"
         :class="{ active: isActive('/') && !activePanel }"
         @click="goHome"
-        @mouseenter="showNavTooltip($event, '點餐')"
+        @mouseenter="showNavTooltip($event, t('nav.order'))"
         @mouseleave="hideNavTooltip"
-        @focus="showNavTooltip($event, '點餐')"
+        @focus="showNavTooltip($event, t('nav.order'))"
         @blur="hideNavTooltip"
       >
         <i class="fas fa-utensils nav-icon"></i>
-        <span class="nav-label">點餐</span>
+        <span class="nav-label">{{ t('nav.order') }}</span>
       </button>
       <button
         class="nav-item"
         :class="{ active: isActive('/dashboard') }"
         @click="goDashboard"
-        @mouseenter="showNavTooltip($event, '今日訂單')"
+        @mouseenter="showNavTooltip($event, t('nav.todayOrders'))"
         @mouseleave="hideNavTooltip"
-        @focus="showNavTooltip($event, '今日訂單')"
+        @focus="showNavTooltip($event, t('nav.todayOrders'))"
         @blur="hideNavTooltip"
       >
         <i class="fas fa-list-check nav-icon"></i>
-        <span class="nav-label">今日訂單</span>
+        <span class="nav-label">{{ t('nav.todayOrders') }}</span>
       </button>
       <template v-if="isLoggedIn">
         <button
           class="nav-item action"
           :class="{ active: activePanel === 'records' }"
           @click="goPanel('records')"
-          @mouseenter="showNavTooltip($event, '歷史訂單')"
+          @mouseenter="showNavTooltip($event, t('nav.history'))"
           @mouseleave="hideNavTooltip"
-          @focus="showNavTooltip($event, '歷史訂單')"
+          @focus="showNavTooltip($event, t('nav.history'))"
           @blur="hideNavTooltip"
         >
           <i class="fas fa-clock-rotate-left nav-icon"></i>
-          <span class="nav-label">歷史訂單</span>
+          <span class="nav-label">{{ t('nav.history') }}</span>
         </button>
         <button
+          v-if="walletEnabled"
           class="nav-item action"
           :class="{ active: activePanel === 'wallet' }"
           @click="goPanel('wallet')"
-          @mouseenter="showNavTooltip($event, '虛擬錢包')"
+          @mouseenter="showNavTooltip($event, t('nav.wallet'))"
           @mouseleave="hideNavTooltip"
-          @focus="showNavTooltip($event, '虛擬錢包')"
+          @focus="showNavTooltip($event, t('nav.wallet'))"
           @blur="hideNavTooltip"
         >
           <i class="fas fa-wallet nav-icon"></i>
-          <span class="nav-label">虛擬錢包</span>
+          <span class="nav-label">{{ t('nav.wallet') }}</span>
         </button>
         <button
           class="nav-item action"
           :class="{ active: activePanel === 'stats' }"
           @click="goStatsPanel"
-          @mouseenter="showNavTooltip($event, '統計')"
+          @mouseenter="showNavTooltip($event, t('nav.stats'))"
           @mouseleave="hideNavTooltip"
-          @focus="showNavTooltip($event, '統計')"
+          @focus="showNavTooltip($event, t('nav.stats'))"
           @blur="hideNavTooltip"
         >
           <i class="fas fa-chart-column nav-icon"></i>
-          <span class="nav-label">統計</span>
+          <span class="nav-label">{{ t('nav.stats') }}</span>
         </button>
       </template>
     </nav>
@@ -284,7 +299,7 @@ async function handleLogout() {
     <template v-if="isAdmin && isLoggedIn">
       <div class="section-divider" />
       <div class="settings-nav">
-        <p v-if="!collapsed" class="nav-section-label">管理功能</p>
+        <p v-if="!collapsed" class="nav-section-label">{{ t('nav.adminSection') }}</p>
         <button
           v-for="item in settingsItems"
           :key="item.id"
@@ -310,36 +325,47 @@ async function handleLogout() {
       <div class="section-divider" />
       <div class="user-info" :title="collapsed ? userDisplayName : ''">
         <span class="user-avatar" :class="{ loading: !hasProfilePreview }">
-          <i v-if="!hasProfilePreview" class="fas fa-circle-notch fa-spin" aria-label="載入使用者資料"></i>
+          <i v-if="!hasProfilePreview" class="fas fa-circle-notch fa-spin" :aria-label="t('nav.loadingProfile')"></i>
           <template v-else>{{ avatarInitial }}</template>
         </span>
         <div class="user-text">
-          <p class="user-name">{{ hasProfilePreview ? userDisplayName : '載入中…' }}</p>
-          <p v-if="profileLoaded && isAdmin" class="user-role">管理員</p>
+          <p class="user-name">{{ hasProfilePreview ? userDisplayName : t('nav.loading') }}</p>
+          <p v-if="profileLoaded && isAdmin" class="user-role">{{ t('nav.admin') }}</p>
         </div>
       </div>
       <div class="user-actions">
         <button
           class="user-action-btn"
-          @click="pwOpen = true"
-          @mouseenter="showNavTooltip($event, '修改密碼')"
+          @click="personalOpen = true"
+          @mouseenter="showNavTooltip($event, t('nav.personalSettings'))"
           @mouseleave="hideNavTooltip"
-          @focus="showNavTooltip($event, '修改密碼')"
+          @focus="showNavTooltip($event, t('nav.personalSettings'))"
+          @blur="hideNavTooltip"
+        >
+          <i class="fas fa-user-gear"></i>
+          <span class="nav-label">{{ t('nav.personalSettings') }}</span>
+        </button>
+        <button
+          class="user-action-btn"
+          @click="pwOpen = true"
+          @mouseenter="showNavTooltip($event, t('nav.changePassword'))"
+          @mouseleave="hideNavTooltip"
+          @focus="showNavTooltip($event, t('nav.changePassword'))"
           @blur="hideNavTooltip"
         >
           <i class="fas fa-key"></i>
-          <span class="nav-label">修改密碼</span>
+          <span class="nav-label">{{ t('nav.changePassword') }}</span>
         </button>
         <button
           class="user-action-btn danger"
           @click="handleLogout"
-          @mouseenter="showNavTooltip($event, '登出')"
+          @mouseenter="showNavTooltip($event, t('nav.logout'))"
           @mouseleave="hideNavTooltip"
-          @focus="showNavTooltip($event, '登出')"
+          @focus="showNavTooltip($event, t('nav.logout'))"
           @blur="hideNavTooltip"
         >
           <i class="fas fa-right-from-bracket"></i>
-          <span class="nav-label">登出</span>
+          <span class="nav-label">{{ t('nav.logout') }}</span>
         </button>
       </div>
     </div>
@@ -361,11 +387,11 @@ async function handleLogout() {
   <nav class="mobile-bottom-nav">
     <button class="mob-item" :class="{ active: isActive('/') && !activePanel }" @click="goHome">
       <i class="fas fa-utensils mob-icon"></i>
-      <span class="mob-label">點餐</span>
+      <span class="mob-label">{{ t('nav.mobOrder') }}</span>
     </button>
     <button class="mob-item" :class="{ active: isActive('/dashboard') }" @click="goDashboard">
       <i class="fas fa-list-check mob-icon"></i>
-      <span class="mob-label">訂單</span>
+      <span class="mob-label">{{ t('nav.mobOrders') }}</span>
     </button>
     <template v-if="isLoggedIn">
       <button
@@ -376,7 +402,7 @@ async function handleLogout() {
         @click="moreOpen = !moreOpen"
       >
         <i class="fas fa-ellipsis mob-icon"></i>
-        <span class="mob-label">更多</span>
+        <span class="mob-label">{{ t('nav.mobMore') }}</span>
       </button>
     </template>
   </nav>
@@ -385,22 +411,26 @@ async function handleLogout() {
   <Teleport to="body">
     <Transition name="mob-more">
       <div v-if="moreOpen" class="mob-more-overlay" @click.self="moreOpen = false">
-        <div ref="moreSheet" class="mob-more-sheet" role="menu" aria-label="更多功能">
+        <div ref="moreSheet" class="mob-more-sheet" role="menu" :aria-label="t('nav.moreMenu')">
           <button class="mob-more-item" role="menuitem" :class="{ active: activePanel === 'records' }" @click="selectMore(() => goPanel('records'))">
             <i class="fas fa-clock-rotate-left" aria-hidden="true"></i>
-            <span>歷史訂單</span>
+            <span>{{ t('nav.history') }}</span>
           </button>
-          <button class="mob-more-item" role="menuitem" :class="{ active: activePanel === 'wallet' }" @click="selectMore(() => goPanel('wallet'))">
+          <button v-if="walletEnabled" class="mob-more-item" role="menuitem" :class="{ active: activePanel === 'wallet' }" @click="selectMore(() => goPanel('wallet'))">
             <i class="fas fa-wallet" aria-hidden="true"></i>
-            <span>虛擬錢包</span>
+            <span>{{ t('nav.wallet') }}</span>
           </button>
           <button class="mob-more-item" role="menuitem" :class="{ active: activePanel === 'stats' }" @click="selectMore(goStatsPanel)">
             <i class="fas fa-chart-column" aria-hidden="true"></i>
-            <span>統計</span>
+            <span>{{ t('nav.stats') }}</span>
           </button>
           <button v-if="isAdmin" class="mob-more-item" role="menuitem" :class="{ active: isSettings }" @click="selectMore(() => goSettings('stores'))">
             <i class="fas fa-gear" aria-hidden="true"></i>
-            <span>設定</span>
+            <span>{{ t('nav.settings') }}</span>
+          </button>
+          <button class="mob-more-item" role="menuitem" @click="selectMore(() => { personalOpen = true })">
+            <i class="fas fa-user-gear" aria-hidden="true"></i>
+            <span>{{ t('nav.personalSettings') }}</span>
           </button>
         </div>
       </div>
@@ -415,14 +445,14 @@ async function handleLogout() {
           <div class="pw-header">
             <span class="pw-head-icon" aria-hidden="true"><i class="fas fa-key"></i></span>
             <div class="pw-head-text">
-              <h3 class="pw-title">修改密碼</h3>
-              <p class="pw-sub">為了帳號安全，建議定期更換</p>
+              <h3 class="pw-title">{{ t('nav.password.title') }}</h3>
+              <p class="pw-sub">{{ t('nav.password.subtitle') }}</p>
             </div>
-            <button class="pw-close" @click="closePwPanel()" aria-label="關閉">×</button>
+            <button class="pw-close" @click="closePwPanel()" :aria-label="t('common.close')">×</button>
           </div>
           <div class="pw-body">
             <div class="field">
-              <label class="field-label">目前密碼</label>
+              <label class="field-label">{{ t('nav.password.current') }}</label>
               <div class="password-input-wrap">
                 <input
                   v-model="pwForm.current"
@@ -433,8 +463,8 @@ async function handleLogout() {
                 <button
                   type="button"
                   class="password-toggle"
-                  :aria-label="pwVisibility.current ? '隱藏目前密碼' : '顯示目前密碼'"
-                  :title="pwVisibility.current ? '隱藏密碼' : '顯示密碼'"
+                  :aria-label="pwVisibility.current ? t('nav.password.hideCurrent') : t('nav.password.showCurrent')"
+                  :title="pwVisibility.current ? t('nav.password.hide') : t('nav.password.show')"
                   @click="togglePwVisibility('current')"
                 >
                   <i :class="['fas', pwVisibility.current ? 'fa-eye-slash' : 'fa-eye']"></i>
@@ -442,7 +472,7 @@ async function handleLogout() {
               </div>
             </div>
             <div class="field">
-              <label class="field-label">新密碼</label>
+              <label class="field-label">{{ t('nav.password.next') }}</label>
               <div class="password-input-wrap">
                 <input
                   v-model="pwForm.next"
@@ -453,8 +483,8 @@ async function handleLogout() {
                 <button
                   type="button"
                   class="password-toggle"
-                  :aria-label="pwVisibility.next ? '隱藏新密碼' : '顯示新密碼'"
-                  :title="pwVisibility.next ? '隱藏密碼' : '顯示密碼'"
+                  :aria-label="pwVisibility.next ? t('nav.password.hideNext') : t('nav.password.showNext')"
+                  :title="pwVisibility.next ? t('nav.password.hide') : t('nav.password.show')"
                   @click="togglePwVisibility('next')"
                 >
                   <i :class="['fas', pwVisibility.next ? 'fa-eye-slash' : 'fa-eye']"></i>
@@ -475,7 +505,7 @@ async function handleLogout() {
               </Transition>
             </div>
             <div class="field">
-              <label class="field-label">確認新密碼</label>
+              <label class="field-label">{{ t('nav.password.confirm') }}</label>
               <div class="password-input-wrap">
                 <input
                   v-model="pwForm.confirm"
@@ -487,8 +517,8 @@ async function handleLogout() {
                 <button
                   type="button"
                   class="password-toggle"
-                  :aria-label="pwVisibility.confirm ? '隱藏確認新密碼' : '顯示確認新密碼'"
-                  :title="pwVisibility.confirm ? '隱藏密碼' : '顯示密碼'"
+                  :aria-label="pwVisibility.confirm ? t('nav.password.hideConfirm') : t('nav.password.showConfirm')"
+                  :title="pwVisibility.confirm ? t('nav.password.hide') : t('nav.password.show')"
                   @click="togglePwVisibility('confirm')"
                 >
                   <i :class="['fas', pwVisibility.confirm ? 'fa-eye-slash' : 'fa-eye']"></i>
@@ -497,15 +527,17 @@ async function handleLogout() {
             </div>
           </div>
           <div class="pw-footer">
-            <button class="pw-cancel" @click="closePwPanel()">取消</button>
+            <button class="pw-cancel" @click="closePwPanel()">{{ t('common.cancel') }}</button>
             <button class="pw-submit" @click="handleChangePassword" :disabled="pwLoading">
-              {{ pwLoading ? '更新中…' : '確認修改' }}
+              {{ pwLoading ? t('nav.password.submitting') : t('nav.password.submit') }}
             </button>
           </div>
         </div>
       </div>
     </Transition>
   </Teleport>
+
+  <PersonalSettingsModal v-if="personalOpen" @close="personalOpen = false" />
 </template>
 
 <style scoped>
@@ -1053,13 +1085,16 @@ async function handleLogout() {
 .brand-sub, .nav-section-label { display: none; }
 .nav-item, .collapsed .nav-item { flex-direction: column; justify-content: center; gap: 5px; padding: 10px 2px; border-radius: 6px; }
 .nav-label, .collapsed .nav-label { max-width: none; opacity: 1; font-size: var(--text-micro); }
+/* 窄欄放不下的較長標籤（例如英文 "Today's orders"）折成兩行置中，不要被截斷 */
+.nav-item, .collapsed .nav-item { white-space: normal; }
+.nav-label, .collapsed .nav-label { max-width: 100%; text-align: center; line-height: 1.2; overflow-wrap: break-word; }
 .nav-icon { color: var(--ink-soft); font-size: var(--text-lead); }
 .nav-item::before { display: none; }
 .nav-item:not(.active):hover { background: var(--ink-3); color: var(--paper); }
 .user-info { justify-content: center; }
 .user-text { display: none; }
 .user-actions { flex-direction: column; }
-.user-action-btn { color: var(--ink-soft); background: var(--ink-3); padding: 8px 2px; gap: 4px; }
+.user-action-btn { color: var(--ink-soft); background: var(--ink-3); padding: 8px 2px; gap: 4px; flex-direction: column; white-space: normal; text-align: center; line-height: 1.2; font-size: var(--text-micro); }
 .theme-segment { flex-direction: column; }
 .theme-opt { padding: 5px 2px; }
 .theme-section { border-top: 1px solid var(--line); }

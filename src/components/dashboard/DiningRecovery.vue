@@ -9,9 +9,11 @@ import { useToast } from '../../composables/useToast'
 import { confirmDialog } from '../../composables/useDialog'
 import { cancelDiningNeedViaFunction } from '../../services/walletFunctions'
 import { getAvatarColor } from '../../utils/avatar'
+import { canProxyOrderFor, memberPaymentMethod, selfPaymentMethod } from '../../utils/systemSettings'
+import { t, translateError } from '../../i18n'
 
-const { diningDay, diningLoading, diningError } = useFirestore()
-const { userUid } = useAuth()
+const { systemSettings, diningDay, diningLoading, diningError } = useFirestore()
+const { userUid, isAdmin } = useAuth()
 const { showToast } = useToast()
 const router = useRouter()
 const { activePanel, replacementSource, closePanel } = useHomeActions()
@@ -20,6 +22,13 @@ const needs = computed(() => Object.values(diningDay.value.needs || {}))
 const pending = computed(() => needs.value.filter(n => n.status === 'pending'))
 const pendingPeople = computed(() => new Set(pending.value.map(n => n.personKey)).size)
 const busy = ref(false)
+// 替別人重新點餐受代訂規則限制；沒有帳號的人還需要現金付款可用。
+const { membersWithUid } = useFirestore()
+const reorderPaymentMethod = (need) => {
+  if (need.uid && need.uid === userUid.value) return selfPaymentMethod(systemSettings.value)
+  const member = need.uid ? (membersWithUid?.value || []).find(m => m.uid === need.uid) || { uid: need.uid } : null
+  return canProxyOrderFor(systemSettings.value, isAdmin.value, member) ? memberPaymentMethod(systemSettings.value, Boolean(need.uid)) : ''
+}
 async function openStoreChange(storeName) {
   if (!userUid.value || busy.value || submitting.value) return
   const previousPanel = activePanel.value
@@ -33,14 +42,19 @@ async function openStoreChange(storeName) {
   } catch {
     activePanel.value = previousPanel
     replacementSource.value = previousSource
-    showToast('無法開啟設定店家，請再試一次', 'error')
+    showToast(t('dashboard.recovery.openStoreFailed'), 'error')
   } finally { busy.value = false }
 }
 defineExpose({ openStoreChange })
 async function openReorder(need) {
   if (!userUid.value || submitting.value || busy.value) return
   if (diningLoading.value || diningError.value || diningDay.value.needs?.[need.id]?.status !== 'pending') {
-    showToast('補點狀態已更新，請重新確認名單', 'error')
+    showToast(t('dashboard.recovery.stale'), 'error')
+    return
+  }
+  const paymentMethod = reorderPaymentMethod(need)
+  if (!paymentMethod) {
+    showToast(t('dashboard.recovery.notAllowed'), 'error')
     return
   }
   busy.value = true
@@ -49,7 +63,7 @@ async function openReorder(need) {
   const previousOwner = cartOwner.value
   const previousStore = activeStoreId.value
   cartOwner.value = {
-    name: need.name, uid: need.uid || '', paymentMethod: need.uid ? 'wallet' : 'cash',
+    name: need.name, uid: need.uid || '', paymentMethod,
     isProxy: need.uid !== userUid.value, isManual: !need.uid, hasAccount: Boolean(need.uid),
   }
   activeStoreId.value = need.targetStore
@@ -57,40 +71,40 @@ async function openReorder(need) {
     closePanel()
     const failure = await router.push('/')
     if (failure) throw failure
-    showToast(`已切換至 ${need.targetStore}，為 ${need.name} 重新點餐`)
+    showToast(t('dashboard.recovery.switched', { store: need.targetStore, name: need.name }))
   } catch {
     activePanel.value = previousPanel
     replacementSource.value = previousSource
     cartOwner.value = previousOwner
     activeStoreId.value = previousStore
-    showToast('無法開啟點餐頁，請再試一次', 'error')
+    showToast(t('dashboard.recovery.openOrderFailed'), 'error')
   } finally { busy.value = false }
 }
 async function decline(need) {
-  if (!await confirmDialog({ title: '確認本次不吃了？', message: `${need.name} 將取消 ${need.targetStore} 的補點需求，系統會保留確認紀錄。` })) return
+  if (!await confirmDialog({ title: t('dashboard.recovery.declineTitle'), message: t('dashboard.recovery.declineMessage', { name: need.name, store: need.targetStore }) })) return
   busy.value = true
-  try { await cancelDiningNeedViaFunction({ needId: need.id }); showToast('已記錄本次不吃', 'success') }
-  catch (error) { showToast(error.message, 'error') }
+  try { await cancelDiningNeedViaFunction({ needId: need.id }); showToast(t('dashboard.recovery.declined'), 'success') }
+  catch (error) { showToast(translateError(error), 'error') }
   finally { busy.value = false }
 }
 </script>
 
 <template>
-  <section class="recovery" :class="{ 'has-content': diningLoading || diningError || pending.length }" aria-label="換店與重新點餐">
-    <p v-if="diningLoading" role="status">正在確認今日用餐名單…</p>
-    <p v-else-if="diningError" role="alert">用餐名單讀取失敗，請重新整理後再確認是否有人漏餐。</p>
+  <section class="recovery" :class="{ 'has-content': diningLoading || diningError || pending.length }" :aria-label="t('dashboard.recovery.sectionAria')">
+    <p v-if="diningLoading" role="status">{{ t('dashboard.recovery.loading') }}</p>
+    <p v-else-if="diningError" role="alert">{{ t('dashboard.recovery.error') }}</p>
     <template v-else>
       <div v-if="pending.length" class="recovery-state warning">
-        <header class="recovery-heading"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i><h2>待重新點餐 {{ pendingPeople }} 人</h2><span>{{ pendingPeople }} 人未完成</span></header>
-        <div class="recovery-columns" aria-hidden="true"><span>成員</span><span>原訂餐點</span><span>狀態</span><span>操作</span></div>
+        <header class="recovery-heading"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i><h2>{{ t('dashboard.recovery.pendingTitle', { count: pendingPeople }) }}</h2><span>{{ t('dashboard.recovery.pendingCount', { count: pendingPeople }) }}</span></header>
+        <div class="recovery-columns" aria-hidden="true"><span>{{ t('dashboard.recovery.columnMember') }}</span><span>{{ t('dashboard.recovery.columnOriginal') }}</span><span>{{ t('dashboard.recovery.columnStatus') }}</span><span>{{ t('dashboard.recovery.columnActions') }}</span></div>
         <article v-for="need in pending" :key="need.id" class="need-row">
           <div class="member-cell"><span class="member-avatar" :style="{ background: getAvatarColor(need.name) }">{{ need.name?.slice(0, 1) }}</span><strong>{{ need.name }}</strong></div>
-          <div class="original-cell"><p>原：{{ need.originals.map(o => `${o.meal}${o.note ? `（${o.note}）` : ''}`).join('、') }}</p><p class="muted store-route">{{ need.sourceStore }} → {{ need.targetStore }}</p></div>
-          <span class="pending-badge"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> 待重新點餐</span>
+          <div class="original-cell"><p>{{ t('dashboard.recovery.original', { items: need.originals.map(o => `${o.meal}${o.note ? `（${o.note}）` : ''}`).join(t('home.listSeparator')) }) }}</p><p class="muted store-route">{{ need.sourceStore }} → {{ need.targetStore }}</p></div>
+          <span class="pending-badge"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> {{ t('dashboard.recovery.pendingBadge') }}</span>
           <div class="row-actions">
-            <button class="reorder-btn" :disabled="busy || submitting" @click="openReorder(need)">{{ need.uid === userUid ? '重新點餐' : '代點' }}</button>
-            <button v-if="userUid" class="change-store-btn" :disabled="busy" @click="openStoreChange(need.targetStore)">再次更換店家</button>
-            <button v-if="userUid" class="decline-btn" :disabled="busy" @click="decline(need)">本次不吃了</button>
+            <button v-if="reorderPaymentMethod(need)" class="reorder-btn" :disabled="busy || submitting" @click="openReorder(need)">{{ need.uid === userUid ? t('dashboard.recovery.reorder') : t('dashboard.recovery.reorderFor') }}</button>
+            <button v-if="userUid" class="change-store-btn" :disabled="busy" @click="openStoreChange(need.targetStore)">{{ t('dashboard.recovery.changeStore') }}</button>
+            <button v-if="userUid" class="decline-btn" :disabled="busy" @click="decline(need)">{{ t('dashboard.recovery.decline') }}</button>
           </div>
         </article>
       </div>

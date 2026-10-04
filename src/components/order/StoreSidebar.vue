@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import MenuPreviewModal from '../modals/MenuPreviewModal.vue'
+import { t } from '../../i18n'
 
 const props = defineProps({
   stores: { type: Array, default: () => [] },
@@ -43,11 +44,11 @@ function mapUrl(store) {
 <template>
   <div class="sidebar" :class="{ horizontal: props.horizontal }">
     <div class="sidebar-header">
-      <span class="sidebar-title">今日店家</span>
+      <span class="sidebar-title">{{ t('dish.stores.title') }}</span>
       <span class="count-badge">{{ stores.length }}</span>
       <button class="add-btn" @click="emit('add-store')">
         <i class="fas fa-plus" aria-hidden="true"></i>
-        <span>設定店家</span>
+        <span>{{ t('dish.stores.configure') }}</span>
       </button>
     </div>
 
@@ -56,12 +57,12 @@ function mapUrl(store) {
       <select
         class="store-select"
         :value="activeStore?.id || ''"
-        aria-label="選擇今日店家"
+        :aria-label="t('dish.stores.selectAria')"
         @change="emit('select', $event.target.value)"
       >
-        <option value="" disabled>選擇店家</option>
+        <option value="" disabled>{{ t('dish.stores.select') }}</option>
         <option v-for="store in stores" :key="`opt-${store.id}`" :value="store.id">
-          {{ store.name }}{{ store.category === 'drink' ? '（飲料）' : '' }}{{ store.isFreeToday ? '・今日免費' : '' }}
+          {{ store.name }}{{ store.category === 'drink' ? t('dish.stores.drinkSuffix') : '' }}{{ store.isFreeToday ? t('dish.stores.freeSuffix') : '' }}
         </option>
       </select>
       <div v-if="activeStore" class="store-actions select-store-actions">
@@ -69,8 +70,8 @@ function mapUrl(store) {
           v-if="hasMenuImages(activeStore)"
           type="button"
           class="chip-action"
-          title="看菜單"
-          :aria-label="`查看 ${activeStore.name} 菜單`"
+          :title="t('dish.stores.menu')"
+          :aria-label="t('dish.stores.menuAria', { name: activeStore.name })"
           @click="previewStore = activeStore"
         >
           <i class="fas fa-info" aria-hidden="true"></i>
@@ -79,8 +80,8 @@ function mapUrl(store) {
           v-if="activeStore.phone"
           class="chip-action"
           :href="phoneHref(activeStore)"
-          :title="`撥打 ${activeStore.name}`"
-          :aria-label="`撥打 ${activeStore.name}`"
+          :title="t('dish.stores.call', { name: activeStore.name })"
+              :aria-label="t('dish.stores.call', { name: activeStore.name })"
         >
           <i class="fas fa-phone" aria-hidden="true"></i>
         </a>
@@ -90,8 +91,8 @@ function mapUrl(store) {
           :href="mapUrl(activeStore)"
           target="_blank"
           rel="noopener noreferrer"
-          :title="`導航到 ${activeStore.name}`"
-          :aria-label="`導航到 ${activeStore.name}`"
+          :title="t('dish.stores.navigate', { name: activeStore.name })"
+              :aria-label="t('dish.stores.navigate', { name: activeStore.name })"
         >
           <i class="fas fa-map-marker-alt" aria-hidden="true"></i>
         </a>
@@ -99,8 +100,8 @@ function mapUrl(store) {
       <button
         type="button"
         class="chip-action select-setup-btn"
-        title="設定今日開放店家"
-        aria-label="設定今日開放店家"
+        :title="t('dish.stores.configureToday')"
+            :aria-label="t('dish.stores.configureToday')"
         @click="emit('add-store')"
       >
         <i class="fas fa-sliders" aria-hidden="true"></i>
@@ -123,16 +124,16 @@ function mapUrl(store) {
         <span class="dot" aria-hidden="true"></span>
         <span class="sname">{{ store.name }}</span>
         <span class="stag" :class="store.category === 'drink' ? 'tag-drink' : 'tag-lunch'">
-          {{ store.category === 'drink' ? '飲料' : '午餐' }}
+          {{ store.category === 'drink' ? t('dish.stores.drink') : t('dish.stores.lunch') }}
         </span>
-        <span v-if="store.isFreeToday" class="stag tag-free">免費</span>
+        <span v-if="store.isFreeToday" class="stag tag-free">{{ t('dish.stores.free') }}</span>
         <div class="store-actions">
           <button
             v-if="hasMenuImages(store)"
             type="button"
             class="chip-action"
-            title="看菜單"
-            :aria-label="`查看 ${store.name} 菜單`"
+            :title="t('dish.stores.menu')"
+            :aria-label="t('dish.stores.menuAria', { name: store.name })"
             @click.stop="previewStore = store"
           >
             <i class="fas fa-info" aria-hidden="true"></i>
@@ -144,8 +145,8 @@ function mapUrl(store) {
               type="button"
               class="chip-action"
               :class="{ 'is-on': revealedPhoneId === store.id }"
-              :title="revealedPhoneId === store.id ? '隱藏電話' : `顯示 ${store.name} 電話`"
-              :aria-label="revealedPhoneId === store.id ? `隱藏 ${store.name} 電話` : `顯示 ${store.name} 電話`"
+              :title="revealedPhoneId === store.id ? t('dish.stores.hidePhone') : t('dish.stores.showPhone', { name: store.name })"
+                :aria-label="revealedPhoneId === store.id ? t('dish.stores.hidePhoneAria', { name: store.name }) : t('dish.stores.showPhone', { name: store.name })"
               :aria-expanded="revealedPhoneId === store.id"
               @click.stop="togglePhone(store)"
             >
@@ -160,8 +161,8 @@ function mapUrl(store) {
               :href="mapUrl(store)"
               target="_blank"
               rel="noopener noreferrer"
-              :title="`導航到 ${store.name}`"
-              :aria-label="`導航到 ${store.name}`"
+              :title="t('dish.stores.navigate', { name: store.name })"
+                :aria-label="t('dish.stores.navigate', { name: store.name })"
               @click.stop
             >
               <i class="fas fa-map-marker-alt" aria-hidden="true"></i>

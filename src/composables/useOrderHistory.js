@@ -1,6 +1,7 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { fetchOrdersInRange } from '../services/orderHistory'
 import { getTaipeiDateRangeBounds, getTaipeiDayStartMs } from '../utils/format'
+import { t } from '../i18n'
 
 export function useOrderHistory(from, to) {
   const orders = ref([])
@@ -17,16 +18,18 @@ export function useOrderHistory(from, to) {
     loading.value = true
     try {
       const { startMs, endMs } = getTaipeiDateRangeBounds(from.value, to.value)
-      if (!from.value || !to.value || endMs > getTaipeiDayStartMs()) throw new Error('請選擇今天以前的完整日期區間')
+      if (!from.value || !to.value || endMs > getTaipeiDayStartMs()) throw new Error('PAST_RANGE_REQUIRED')
       const result = await fetchOrdersInRange(startMs, endMs, () => id === requestId)
       if (id !== requestId) return
       orders.value = result
       loaded.value = true
     } catch (err) {
       if (id !== requestId) return
-      error.value = err.message === '請選擇有效的起訖日期' || err.message === '請選擇今天以前的完整日期區間'
-        ? err.message
-        : '歷史訂單未能完整載入，請確認網路後重試。'
+      error.value = err.message === 'INVALID_RANGE'
+        ? t('data.history.invalidRange')
+        : err.message === 'PAST_RANGE_REQUIRED'
+          ? t('data.history.pastOnly')
+          : t('data.history.loadFailed')
     } finally {
       if (id === requestId) loading.value = false
     }

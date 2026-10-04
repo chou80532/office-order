@@ -3,6 +3,7 @@ import LoadingState from '../ui/LoadingState.vue'
 import { computed, ref, watch } from 'vue'
 import { useScrollLock } from '../../composables/useScrollLock'
 import { useModalA11y } from '../../composables/useModalA11y'
+import { t } from '../../i18n'
 
 const props = defineProps({
   store: { type: Object, required: true }
@@ -189,13 +190,13 @@ watch(() => currentImage.value?.url, () => {
 
 <template>
   <div class="menu-preview-overlay" @click.self="emit('close')">
-    <div ref="modalRoot" class="menu-preview-modal" role="dialog" aria-modal="true" :aria-label="`${store.name} 菜單圖片`">
+    <div ref="modalRoot" class="menu-preview-modal" role="dialog" aria-modal="true" :aria-label="t('menu.preview.dialogAria', { store: store.name })">
       <div class="menu-preview-header">
         <div>
           <strong>{{ store.name }}</strong>
-          <span v-if="images.length > 1">第 {{ imageIndex + 1 }} / {{ images.length }} 張</span>
+          <span v-if="images.length > 1">{{ t('menu.preview.pageOf', { index: imageIndex + 1, total: images.length }) }}</span>
         </div>
-        <button type="button" class="menu-preview-close" aria-label="關閉菜單圖片" @click="emit('close')">×</button>
+        <button type="button" class="menu-preview-close" :aria-label="t('menu.preview.close')" @click="emit('close')">×</button>
       </div>
       <div
         class="menu-preview-body"
@@ -208,12 +209,12 @@ watch(() => currentImage.value?.url, () => {
         @touchmove.prevent="onTouchMove"
         @touchend="onTouchEnd"
       >
-        <button v-if="images.length > 1" type="button" class="menu-nav-btn prev" aria-label="上一張菜單" @click="selectAdjacentImage(-1)">‹</button>
+        <button v-if="images.length > 1" type="button" class="menu-nav-btn prev" :aria-label="t('menu.preview.previous')" @click="selectAdjacentImage(-1)">‹</button>
         <img
           v-if="currentImage"
           :key="`${currentImage.url}-${imageRetryKey}`"
           :src="currentImage.url"
-          :alt="`${store.name} 菜單圖片`"
+          :alt="t('menu.preview.dialogAria', { store: store.name })"
           :style="imageStyle"
           class="menu-preview-image"
           :class="{ loaded: !imageLoading && !imageError }"
@@ -224,20 +225,20 @@ watch(() => currentImage.value?.url, () => {
           @load="handleImageLoad"
           @error="handleImageError"
         />
-        <LoadingState v-if="imageLoading" class="menu-preview-status" title="正在載入菜單…" compact />
+        <LoadingState v-if="imageLoading" class="menu-preview-status" :title="t('menu.preview.loading')" compact />
         <div v-else-if="imageError" class="menu-preview-status menu-preview-error" role="alert">
           <i class="fas fa-image" aria-hidden="true"></i>
-          <span>菜單圖片載入失敗</span>
-          <button type="button" @click.stop="retryImage">重新載入</button>
+          <span>{{ t('menu.preview.loadFailed') }}</span>
+          <button type="button" @click.stop="retryImage">{{ t('menu.preview.reload') }}</button>
         </div>
-        <div v-if="currentImage && !imageError" class="menu-preview-zoom-bar" aria-label="菜單圖片縮放控制">
-          <button type="button" class="menu-preview-glass-btn" title="縮小" aria-label="縮小菜單圖片" @click.stop="zoomOut"><i class="fas fa-search-minus"></i></button>
+        <div v-if="currentImage && !imageError" class="menu-preview-zoom-bar" :aria-label="t('menu.preview.zoomAria')">
+          <button type="button" class="menu-preview-glass-btn" :title="t('menu.preview.zoomOut')" :aria-label="t('menu.preview.zoomOutAria')" @click.stop="zoomOut"><i class="fas fa-search-minus"></i></button>
           <span class="menu-preview-zoom-level">{{ Math.round(scale * 100) }}%</span>
-          <button type="button" class="menu-preview-glass-btn" title="放大" aria-label="放大菜單圖片" @click.stop="zoomIn"><i class="fas fa-search-plus"></i></button>
+          <button type="button" class="menu-preview-glass-btn" :title="t('menu.preview.zoomIn')" :aria-label="t('menu.preview.zoomInAria')" @click.stop="zoomIn"><i class="fas fa-search-plus"></i></button>
           <div class="menu-preview-divider"></div>
-          <button type="button" class="menu-preview-glass-btn" title="整頁" aria-label="整頁顯示菜單圖片" @click.stop="resetZoom"><i class="fas fa-expand"></i></button>
+          <button type="button" class="menu-preview-glass-btn" :title="t('menu.preview.fit')" :aria-label="t('menu.preview.fitAria')" @click.stop="resetZoom"><i class="fas fa-expand"></i></button>
         </div>
-        <button v-if="images.length > 1" type="button" class="menu-nav-btn next" aria-label="下一張菜單" @click="selectAdjacentImage(1)">›</button>
+        <button v-if="images.length > 1" type="button" class="menu-nav-btn next" :aria-label="t('menu.preview.next')" @click="selectAdjacentImage(1)">›</button>
       </div>
     </div>
   </div>

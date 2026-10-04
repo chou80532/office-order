@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, nextTick, onUnmounted, watch, toRef } from 'vue'
-import { formatMoney } from '../../utils/format'
+import { formatAmount, formatMoney, getAppCurrency, parseMoneyInput } from '../../utils/format'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '../../firestore'
 import { useAuth } from '../../composables/useAuth'
@@ -8,7 +8,11 @@ import { useFirestore } from '../../composables/useFirestore'
 import { useToast } from '../../composables/useToast'
 import { usePendingCart, createCartRestore } from '../../composables/usePendingCart'
 import { cartPortions, cartOptionSummary, cartCustomNote, dishSpecification } from '../../utils/dishOptions'
-import { LOW_WALLET_BALANCE, MAX_PRICE, MAX_MEAL_LENGTH, MAX_NOTE_LENGTH, UNDO_DURATION_MS } from '../../constants'
+import { MAX_MEAL_LENGTH, MAX_NOTE_LENGTH, UNDO_DURATION_MS } from '../../constants'
+import { canProxyOrder, canProxyOrderFor, memberPaymentMethod, selfPaymentMethod } from '../../utils/systemSettings'
+import { useOrderingCutoff } from '../../composables/useOrderingCutoff'
+import { DRINK_NOTE_ROLES, noteGroupRole } from '../../utils/defaultNoteGroups'
+import { t } from '../../i18n'
 
 const props = defineProps({
   items: { type: Array, default: () => [] },
@@ -23,7 +27,7 @@ const props = defineProps({
 const emit = defineEmits(['remove', 'submit', 'repeat-last', 'update-items', 'current-name-change', 'current-owner-change', 'edit'])
 
 const { userDisplayName, userUid, isAdmin } = useAuth()
-const { membersWithUid, noteGroups, dailyFreeStores, requireMemberData, releaseMemberData, requireQuickNotes, releaseQuickNotes } = useFirestore()
+const { systemSettings, membersWithUid, noteGroups, dailyFreeStores, requireMemberData, releaseMemberData, requireQuickNotes, releaseQuickNotes } = useFirestore()
 const { showToast } = useToast()
 
 const restoredOwner = props.initialOwner ? { ...props.initialOwner } : null
@@ -35,7 +39,19 @@ const proxyManual = ref(restoredOwner?.isProxy && restoredOwner?.isManual
   ? String(restoredOwner.name || '')
   : '')
 
-const proxyMembers = computed(() => membersWithUid.value)
+// 代訂權限與可用付款方式依系統設定；伺服器端送單時會再檢查一次。
+const canProxy = computed(() => canProxyOrder(systemSettings.value, isAdmin.value))
+const consentMode = computed(() => systemSettings.value.proxyOrdering === 'consent' && !isAdmin.value)
+const allowManualProxy = computed(() => memberPaymentMethod(systemSettings.value, false) !== '')
+// 「需本人同意」時只列出已授權的成員；沒有帳號的人不受同意限制，但需要可用的付款方式。
+const proxyMembers = computed(() => membersWithUid.value
+  .filter(member => member.uid !== userUid.value)
+  .filter(member => memberPaymentMethod(systemSettings.value, Boolean(member.uid)) !== '')
+  .filter(member => canProxyOrderFor(systemSettings.value, isAdmin.value, member)))
+const maxItemPrice = computed(() => systemSettings.value.limits?.maxItemPrice || 10_000)
+const lowBalanceThreshold = computed(() => systemSettings.value.limits?.lowBalance ?? 100)
+const { closed: orderingClosed, cutoffTime } = useOrderingCutoff()
+const blockedByCutoff = computed(() => orderingClosed.value && !isAdmin.value)
 
 const selectedProxyMember = computed(() => {
   if (!isProxy.value || proxyTarget.value === '__manual__') return null
@@ -47,7 +63,7 @@ const currentOwner = computed(() => {
     return {
       name: String(userDisplayName.value || '').trim(),
       uid: userUid.value || '',
-      paymentMethod: 'wallet',
+      paymentMethod: selfPaymentMethod(systemSettings.value),
       isManual: false,
       isProxy: false,
       hasAccount: Boolean(userUid.value),
@@ -73,7 +89,9 @@ const currentOwner = computed(() => {
   return {
     name: String(member?.name || proxyTarget.value || '').trim(),
     uid: ownerUid,
-    paymentMethod: member ? (member.uid ? 'wallet' : 'cash') : (initialMember?.paymentMethod || 'cash'),
+    paymentMethod: member
+      ? memberPaymentMethod(systemSettings.value, Boolean(member.uid))
+      : (initialMember?.paymentMethod || memberPaymentMethod(systemSettings.value, Boolean(ownerUid))),
     isManual: false,
     isProxy: true,
     hasAccount: Boolean(ownerUid),
@@ -84,7 +102,7 @@ const currentName = computed(() => currentOwner.value.name)
 
 watch(currentOwner, (owner, previousOwner) => {
   if (previousOwner && owner.name && owner.name !== previousOwner.name && props.items.length) {
-    showToast(`接下來為 ${owner.name} 點餐，已加入的餐點不變`)
+    showToast(t('cart.proxySwitched', { name: owner.name }))
   }
   emit('current-name-change', owner.name)
   emit('current-owner-change', { ...owner })
@@ -125,8 +143,15 @@ onUnmounted(() => {
 })
 
 const isWalletPayment = computed(() => currentOwner.value.paymentMethod === 'wallet')
+const isTrackingOnlyPayment = computed(() => currentOwner.value.paymentMethod === 'none')
+const paymentChip = computed(() => ({
+  wallet: { className: 'wallet', icon: 'fa-wallet' },
+  cash: { className: 'cash', icon: 'fa-money-bill-wave' },
+  none: { className: 'none', icon: 'fa-clipboard-list' },
+}[currentOwner.value.paymentMethod] || { className: 'cash', icon: 'fa-money-bill-wave' }))
 const showLowBalance = computed(() =>
-  currentName.value && isWalletPayment.value && walletBalance.value !== null && !walletLoading.value && walletBalance.value < LOW_WALLET_BALANCE
+  currentName.value && isWalletPayment.value && walletBalance.value !== null && !walletLoading.value
+  && lowBalanceThreshold.value > 0 && walletBalance.value < lowBalanceThreshold.value
 )
 
 function cancelProxy() {
@@ -144,6 +169,15 @@ function resetToSelf() {
 // 送出期間若切頁再回來，由共享草稿的重設同步新掛載的購物車。
 watch(() => props.initialOwner, owner => {
   if (!owner) resetToSelf()
+})
+
+// 管理員關閉代訂（或停用手動姓名所需的現金付款）時，購物車改回幫自己點。
+watch([canProxy, allowManualProxy], ([proxyAllowed, manualAllowed]) => {
+  if (!isProxy.value) return
+  if (!proxyAllowed || (proxyTarget.value === '__manual__' && !manualAllowed)) {
+    cancelProxy()
+    showToast(t('cart.proxyReset'))
+  }
 })
 
 // 按下「代訂」直接展開對象下拉，不必再點一次選單
@@ -197,13 +231,22 @@ const manualNote = toRef(manualDraft, 'note')
 const showManualNoteOptions = ref(false)
 const showManualSection = ref(false)
 const manualNoteHasText = computed(() => manualNote.value.trim().length > 0)
-const manualPriceError = computed(() => {
+// 手動金額以主單位輸入（新台幣為整數元，美元可到分），換算成最小單位整數再檢查。
+const manualPriceMinor = computed(() => {
   const rawPrice = String(manualPrice.value ?? '').trim()
-  if (!rawPrice) return '請輸入金額'
-
-  const price = Number(rawPrice)
-  if (!Number.isFinite(price) || Math.round(price) < 1) return '四捨五入後金額需至少 1 元'
-  if (price > MAX_PRICE) return `金額不可超過 ${formatMoney(MAX_PRICE)}`
+  if (!rawPrice) return Number.NaN
+  const exact = parseMoneyInput(rawPrice)
+  if (Number.isFinite(exact)) return exact
+  // 無小數的幣別沿用舊行為：小數四捨五入成整數元。
+  const rounded = getAppCurrency().decimals ? Number.NaN : Math.round(Number(rawPrice))
+  return Number.isFinite(rounded) ? rounded : Number.NaN
+})
+const manualPriceError = computed(() => {
+  if (!String(manualPrice.value ?? '').trim()) return t('cart.priceRequired')
+  const price = manualPriceMinor.value
+  if (!Number.isFinite(price)) return t('cart.priceInvalid')
+  if (price < 1) return t('cart.priceTooLow', { min: formatMoney(1) })
+  if (price > maxItemPrice.value) return t('cart.priceTooHigh', { max: formatMoney(maxItemPrice.value) })
   return ''
 })
 const canAddManualItem = computed(() => manualMeal.value.trim().length > 0 && !manualPriceError.value)
@@ -218,18 +261,18 @@ function storeForCartItem(item) {
   return props.allStores.find(store => store.name === itemStoreName || store.id === itemStoreName) || props.selectedStore
 }
 
-const DRINK_GROUP_LABELS = new Set(['甜度', '冰量', '溫度'])
+// 只有飲料才顯示甜度、冰量、溫度這類備註群組（依用途判斷，中英文名稱都適用）。
 
 function isDrinkItem(item) {
   const store = item ? storeForCartItem(item) : props.selectedStore
   if (store?.category === 'drink') return true
-  return /飲料|茶|咖啡|果汁|奶茶/.test(String(item?.category || ''))
+  return /飲料|茶|咖啡|果汁|奶茶|drink|tea|coffee|juice/i.test(String(item?.category || ''))
 }
 
 function customizationGroupsFor(item = null) {
   const groups = Array.isArray(noteGroups.value) ? noteGroups.value : []
   if (isDrinkItem(item)) return groups
-  return groups.filter(group => !DRINK_GROUP_LABELS.has(group.label))
+  return groups.filter(group => !DRINK_NOTE_ROLES.has(noteGroupRole(group.label)))
 }
 
 const noteTokens = (noteText) => (noteText || '').split('、').map(note => note.trim()).filter(Boolean)
@@ -255,7 +298,7 @@ function addManualItem() {
     showToast(manualPriceError.value, 'error')
     return
   }
-  const price = Math.round(Number(manualPrice.value))
+  const price = manualPriceMinor.value
   emit('update-items', [...props.items, {
     _key: Date.now() + Math.random(),
     name: manualMeal.value.trim(),
@@ -343,8 +386,10 @@ const canSubmit = computed(() =>
   props.items.length > 0 &&
   !props.submitting &&
   !!currentName.value &&
-  !isProjectedBalanceInsufficient.value
+  !isProjectedBalanceInsufficient.value &&
+  !blockedByCutoff.value
 )
+const groupLabel = payment => t({ wallet: 'cart.groupWallet', cash: 'cart.groupCash', none: 'cart.groupNone' }[payment] || 'cart.groupWallet')
 
 function getItemSub(item) {
   return [cartOptionSummary(item), cartCustomNote(item)].filter(Boolean).join('・')
@@ -354,17 +399,21 @@ function clearAll() {
   if (!props.items.length) return
   const restore = createCartRestore(props.items)
   emit('update-items', [])
-  showToast('已清空購物車', 'success', {
+  showToast(t('cart.cleared'), 'success', {
     duration: UNDO_DURATION_MS,
-    undoLabel: '復原',
+    undoLabel: t('cart.undo'),
     undoFn: restore
   })
 }
 
 function submitCart() {
   if (!props.items.length || props.submitting || !currentName.value) return
+  if (blockedByCutoff.value) {
+    showToast(t('cart.cutoffClosedMember', { time: cutoffTime.value }), 'error')
+    return
+  }
   if (isProjectedBalanceInsufficient.value) {
-    showToast('餘額不足，請聯繫總務儲值', 'error')
+    showToast(t('cart.insufficientToast'), 'error')
     return
   }
   emit('submit', currentName.value)
@@ -381,10 +430,10 @@ defineExpose({ currentName, currentOwner, ownerPayload, triggerSubmit, resetToSe
   <div class="cart">
     <div class="cart-header">
       <i class="fas fa-bag-shopping cart-title-icon" aria-hidden="true"></i>
-      <span class="cart-title">購物車</span><span v-if="items.length" class="draft-tag">未送出</span>
+      <span class="cart-title">{{ t('cart.title') }}</span><span v-if="items.length" class="draft-tag">{{ t('cart.draft') }}</span>
       <div class="header-right">
-        <span class="cart-count-chip" v-if="items.length > 0">{{ items.length }} 項 · {{ portionCount }} 份</span>
-        <button v-if="items.length > 0" class="clear-btn" @click="clearAll" title="清空購物車">清空</button>
+        <span class="cart-count-chip" v-if="items.length > 0">{{ t('cart.countChip', { items: items.length, portions: portionCount }) }}</span>
+        <button v-if="items.length > 0" class="clear-btn" @click="clearAll" :title="t('cart.clearTitle')">{{ t('cart.clear') }}</button>
       </div>
     </div>
 
@@ -392,60 +441,60 @@ defineExpose({ currentName, currentOwner, ownerPayload, triggerSubmit, resetToSe
     <div class="who-section">
         <div v-if="!isProxy" key="own" class="who-row">
           <span class="avatar">{{ avatarInitial }}</span>
-          <span class="who-name">{{ userDisplayName || '未命名使用者' }}</span>
-          <span class="pay-chip" :class="isWalletPayment ? 'wallet' : 'cash'">
-            <i :class="['fas', isWalletPayment ? 'fa-wallet' : 'fa-money-bill-wave']" aria-hidden="true"></i>
-            {{ isWalletPayment ? '錢包' : '現金' }}
+          <span class="who-name">{{ userDisplayName || t('common.unnamed') }}</span>
+          <span class="pay-chip" :class="paymentChip.className">
+            <i :class="['fas', paymentChip.icon]" aria-hidden="true"></i>
+            {{ t(`common.payment.${currentOwner.paymentMethod || 'wallet'}`) }}
           </span>
-          <button class="proxy-btn" @click="startProxy">代訂</button>
+          <button v-if="canProxy" class="proxy-btn" @click="startProxy">{{ t('cart.proxy') }}</button>
         </div>
         <div v-else key="proxy" class="proxy-row">
-          <select aria-label="為誰點餐" ref="proxySelect" v-model="proxyTarget" class="proxy-select">
-            <option value="" disabled>選擇代訂對象</option>
+          <select :aria-label="t('cart.proxySelectAria')" ref="proxySelect" v-model="proxyTarget" class="proxy-select">
+            <option value="" disabled>{{ t('cart.proxyPlaceholder') }}</option>
             <option v-for="m in proxyMembers" :key="m.name" :value="m.name">
               {{ m.name }}
             </option>
-            <option value="__manual__">手動輸入姓名</option>
+            <option v-if="allowManualProxy" value="__manual__">{{ t('cart.manualName') }}</option>
           </select>
           <input
             v-if="proxyTarget === '__manual__'"
             ref="proxyManualInput"
             v-model="proxyManual"
             class="proxy-input"
-            placeholder="輸入姓名..."
+            :placeholder="t('cart.manualNamePlaceholder')"
             maxlength="20"
           />
           <div class="proxy-foot">
-            <span v-if="currentName" class="pay-chip" :class="isWalletPayment ? 'wallet' : 'cash'">
-              <i :class="['fas', isWalletPayment ? 'fa-wallet' : 'fa-money-bill-wave']" aria-hidden="true"></i>
-              {{ isWalletPayment ? '錢包扣款' : '現金收款' }}
+            <span v-if="currentName" class="pay-chip" :class="paymentChip.className">
+              <i :class="['fas', paymentChip.icon]" aria-hidden="true"></i>
+              {{ isTrackingOnlyPayment ? t('common.payment.none') : isWalletPayment ? t('common.payment.walletDebit') : t('common.payment.cashCollect') }}
             </span>
-            <button class="cancel-proxy" @click="cancelProxy">改為幫自己點餐</button>
+            <button class="cancel-proxy" @click="cancelProxy">{{ t('cart.backToSelf') }}</button>
           </div>
         </div>
     </div>
 
-    <div class="owner-help">
-      <details><summary>代訂說明</summary><p>切換對象只影響之後加入的餐點，已加入的餐點不變。每個人的付款方式與金額會分開列出。</p></details>
+    <div v-if="canProxy" class="owner-help">
+      <details><summary>{{ t('cart.proxyHelpTitle') }}</summary><p>{{ t('cart.proxyHelp') }}<template v-if="consentMode"> {{ t('cart.consentHelp') }}</template></p></details>
     </div>
     <div class="cart-body">
       <section v-for="group in groupedItems" :key="group.key" class="cart-person-group">
-      <h3 v-if="groupedItems.length > 1 || group.name !== currentName" class="cart-person-heading">{{ group.name }}<small>{{ group.payment === 'cash' ? '現金應付' : '錢包扣款' }} · {{ formatMoney(group.total) }}</small></h3>
+      <h3 v-if="groupedItems.length > 1 || group.name !== currentName" class="cart-person-heading">{{ group.name }}<small>{{ groupLabel(group.payment) }}<template v-if="group.payment !== 'none'"> · {{ formatMoney(group.total) }}</template></small></h3>
       <TransitionGroup name="ci" tag="div" class="cart-items">
         <div v-for="{ item, index: i } in group.items" :key="item._key" class="ci-wrap">
           <div class="ci-row">
-            <button type="button" class="ci-edit" :disabled="submitting" :aria-label="`修改 ${item.name}，${getItemSub(item)}，${item.price} 元`" @click="emit('edit', i)">
+            <button type="button" class="ci-edit" :disabled="submitting" :aria-label="t('cart.editItemAria', { name: item.name, detail: getItemSub(item), price: formatMoney(item.price) })" @click="emit('edit', i)">
             <span class="ci-info">
               <span class="ci-name">
                 {{ itemTitle(item) }}
-                <span v-if="isFreeStoreItem(item)" class="ci-free-tag">免費</span>
+                <span v-if="isFreeStoreItem(item)" class="ci-free-tag">{{ t('cart.free') }}</span>
               </span>
               <span class="ci-spec" v-if="cartOptionSummary(item)">{{ cartOptionSummary(item) }}</span>
               <span class="ci-sub" v-if="cartCustomNote(item)">{{ cartCustomNote(item) }}</span>
             </span>
             <span class="ci-price" :class="{ free: isFreeStoreItem(item) }">{{ formatMoney(item.price) }}</span>
             </button>
-            <button type="button" class="ci-remove" @click="emit('remove', i)" :aria-label="`移除 ${item.name}`" title="移除餐點">×</button>
+            <button type="button" class="ci-remove" @click="emit('remove', i)" :aria-label="t('cart.removeItemAria', { name: item.name })" :title="t('cart.removeItem')">×</button>
           </div>
 
         </div>
@@ -456,8 +505,8 @@ defineExpose({ currentName, currentOwner, ownerPayload, triggerSubmit, resetToSe
         <span class="cart-empty-icon" aria-hidden="true">
           <i class="fas fa-bag-shopping"></i>
         </span>
-        <p class="cart-empty-title">購物車是空的</p>
-        <p class="cart-empty-sub">{{ selectedStore ? '從菜單點選餐點加入' : '先從上方選擇店家' }}</p>
+        <p class="cart-empty-title">{{ t('cart.emptyTitle') }}</p>
+        <p class="cart-empty-sub">{{ selectedStore ? t('cart.emptyPickDish') : t('cart.emptyPickStore') }}</p>
 
         <!-- 空購物車時最需要「重複上一筆」，放這裡當快速起手式 -->
         <!-- 只在確定有上一筆時才出現：沒有紀錄的店家不會先冒出來再消失 -->
@@ -467,7 +516,7 @@ defineExpose({ currentName, currentOwner, ownerPayload, triggerSubmit, resetToSe
             :disabled="lastOrderLoading"
             @click="emit('repeat-last', currentName)"
           >
-            <span class="repeat-label">重複上一筆</span>
+            <span class="repeat-label">{{ t('cart.repeatLast') }}</span>
             <span class="repeat-hint">{{ lastOrder.storeName }}・{{ lastOrder.meal }} {{ formatMoney(lastOrder.price) }}</span>
           </button>
         </Transition>
@@ -480,9 +529,9 @@ defineExpose({ currentName, currentOwner, ownerPayload, triggerSubmit, resetToSe
         @click="toggleManualSection"
       >
         <div class="manual-toggle-copy">
-          <span class="manual-label">手動新增餐點</span>
+          <span class="manual-label">{{ t('cart.manualTitle') }}</span>
           <span class="manual-hint">
-            {{ manualSectionHasDraft ? '草稿未送出' : '菜單沒有也可輸入' }}
+            {{ manualSectionHasDraft ? t('cart.manualDraft') : t('cart.manualHint') }}
           </span>
         </div>
         <i class="fas fa-chevron-down manual-toggle-icon" :class="{ open: showManualSection }"></i>
@@ -490,8 +539,8 @@ defineExpose({ currentName, currentOwner, ownerPayload, triggerSubmit, resetToSe
       <Transition name="note-expand">
         <div v-if="showManualSection || manualSectionHasDraft" class="manual-fields">
           <div class="manual-row">
-            <input v-model="manualMeal" class="m-input meal" placeholder="餐點名稱" :maxlength="MAX_MEAL_LENGTH" @keyup.enter="addManualItem" />
-            <input v-model="manualPrice" class="m-input price mono" placeholder="$ 必填" type="number" inputmode="numeric" min="1" :max="MAX_PRICE" step="1" />
+            <input v-model="manualMeal" class="m-input meal" :placeholder="t('cart.mealPlaceholder')" :maxlength="MAX_MEAL_LENGTH" @keyup.enter="addManualItem" />
+            <input v-model="manualPrice" class="m-input price mono" :placeholder="t('cart.pricePlaceholder', { symbol: getAppCurrency().symbol })" type="text" :inputmode="getAppCurrency().decimals ? 'decimal' : 'numeric'" />
           </div>
           <p v-if="manualMeal.trim() && manualPriceError" class="manual-error">{{ manualPriceError }}</p>
           <div class="manual-row manual-actions-row">
@@ -502,9 +551,9 @@ defineExpose({ currentName, currentOwner, ownerPayload, triggerSubmit, resetToSe
               @click="showManualNoteOptions = !showManualNoteOptions"
             >
               <i class="fas fa-pen-to-square"></i>
-              <span>{{ manualNoteHasText ? manualNote : '備註' }}</span>
+              <span>{{ manualNoteHasText ? manualNote : t('cart.note') }}</span>
             </button>
-            <button class="manual-add" @click="addManualItem" :disabled="!canAddManualItem">新增</button>
+            <button class="manual-add" @click="addManualItem" :disabled="!canAddManualItem">{{ t('cart.add') }}</button>
           </div>
 
         </div>
@@ -517,14 +566,14 @@ defineExpose({ currentName, currentOwner, ownerPayload, triggerSubmit, resetToSe
 
     <Transition name="popover">
       <div v-if="showManualNoteOptions" class="note-popover-layer">
-        <button class="note-popover-backdrop" type="button" aria-label="關閉手動餐點備註" @click="showManualNoteOptions = false"></button>
-        <div ref="noteEditorRef" tabindex="-1" class="note-editor" role="dialog" aria-modal="true" aria-label="編輯手動餐點備註">
+        <button class="note-popover-backdrop" type="button" :aria-label="t('cart.noteEditorClose')" @click="showManualNoteOptions = false"></button>
+        <div ref="noteEditorRef" tabindex="-1" class="note-editor" role="dialog" aria-modal="true" :aria-label="t('cart.noteEditorAria')">
           <div class="note-editor-header">
             <div>
-              <span class="note-editor-title">編輯備註</span>
-              <span class="note-editor-item">{{ manualMeal || '手動新增餐點' }}</span>
+              <span class="note-editor-title">{{ t('cart.noteEditorTitle') }}</span>
+              <span class="note-editor-item">{{ manualMeal || t('cart.manualTitle') }}</span>
             </div>
-            <button type="button" class="note-editor-close" aria-label="關閉" @click="showManualNoteOptions = false">×</button>
+            <button type="button" class="note-editor-close" :aria-label="t('common.close')" @click="showManualNoteOptions = false">×</button>
           </div>
 
           <div class="note-editor-content">
@@ -541,11 +590,11 @@ defineExpose({ currentName, currentOwner, ownerPayload, triggerSubmit, resetToSe
               </div>
             </div>
             <label class="note-input-field">
-              <span class="note-input-label"><i class="fas fa-keyboard"></i> 自行輸入備註</span>
+              <span class="note-input-label"><i class="fas fa-keyboard"></i> {{ t('cart.customNote') }}</span>
               <input
                 v-model="manualNote"
                 class="note-input"
-                placeholder="例如：餐具分開、醬料另外放…"
+                :placeholder="t('cart.customNotePlaceholder')"
                 :maxlength="MAX_NOTE_LENGTH"
                 @keyup.enter="showManualNoteOptions = false"
               />
@@ -563,55 +612,67 @@ defineExpose({ currentName, currentOwner, ownerPayload, triggerSubmit, resetToSe
         :class="{ insufficient: isProjectedBalanceInsufficient }"
       >
         <div class="wallet-compact">
-          <span>{{ currentName }}・錢包</span>
-          <span>{{ formatMoney(walletBalance) }} → <strong>{{ projectedWalletBalance.toLocaleString() }}</strong></span>
+          <span>{{ t('cart.walletOf', { name: currentName }) }}</span>
+          <span>{{ formatMoney(walletBalance) }} → <strong>{{ formatAmount(projectedWalletBalance) }}</strong></span>
         </div>
-        <p class="wallet-summary-note">送出後餘額<span v-if="groupedItems.length > 1">（僅計此人的錢包扣款）</span></p>
+        <p class="wallet-summary-note">{{ t('cart.balanceAfter') }}<span v-if="groupedItems.length > 1">{{ t('cart.balanceAfterOwnOnly') }}</span></p>
         <p v-if="freeTotal > 0" class="wallet-summary-note free-note">
-          免費店家品項 {{ formatMoney(freeTotal) }} 不會扣錢包
+          {{ t('cart.freeNotDebited', { amount: formatMoney(freeTotal) }) }}
         </p>
         <p v-if="isProjectedBalanceInsufficient" class="wallet-summary-note">
-          餘額不足，本次還差 {{ formatMoney(Math.abs(projectedWalletBalance)) }}，請聯繫總務儲值
+          {{ t('cart.insufficient', { amount: formatMoney(Math.abs(projectedWalletBalance)) }) }}
         </p>
         <p v-else-if="showLowBalance" class="wallet-summary-note balance-reminder">
-          錢包餘額低於 {{ formatMoney(LOW_WALLET_BALANCE) }}，建議儲值
+          {{ t('cart.lowBalance', { amount: formatMoney(lowBalanceThreshold) }) }}
         </p>
       </div>
       <div v-else-if="currentName && isWalletPayment" class="wallet-summary">
         <div class="wallet-summary-row">
-          <span>本次扣款</span>
+          <span>{{ t('cart.thisDebit') }}</span>
           <strong>{{ formatMoney(currentWalletCartTotal) }}</strong>
         </div>
-        <p class="wallet-summary-note">{{ walletLoading ? '正在讀取餘額…' : '送出時會確認錢包餘額，餘額不足不會扣款。' }}</p>
+        <p class="wallet-summary-note">{{ walletLoading ? t('cart.readingBalance') : t('cart.balanceChecked') }}</p>
+      </div>
+      <div v-else-if="currentName && isTrackingOnlyPayment" class="wallet-summary cash-mode">
+        <div class="wallet-summary-row">
+          <span>{{ t('cart.paymentMethod') }}</span>
+          <strong>{{ t('cart.trackingOnly') }}</strong>
+        </div>
+        <p class="wallet-summary-note">{{ t('cart.trackingNote') }}</p>
       </div>
       <div v-else-if="currentName && !isWalletPayment" class="wallet-summary cash-mode">
         <div class="wallet-summary-row">
-          <span>付款方式</span>
-          <strong>現金收款</strong>
+          <span>{{ t('cart.paymentMethod') }}</span>
+          <strong>{{ t('cart.cashCollect') }}</strong>
         </div>
         <div class="wallet-summary-row">
-          <span>目前對象應收</span>
+          <span>{{ t('cart.cashDue') }}</span>
           <strong>{{ formatMoney(groupedItems.filter(g => g.name === currentName && g.payment === 'cash').reduce((sum, g) => sum + g.total, 0)) }}</strong>
         </div>
         <p v-if="freeTotal > 0" class="wallet-summary-note free-note">
-          免費店家品項 {{ formatMoney(freeTotal) }} 不列入應收
+          {{ t('cart.freeNotDue', { amount: formatMoney(freeTotal) }) }}
         </p>
-        <p class="wallet-summary-note">送出後會建立現金應收，管理員可在「現金收款」標記已收。</p>
+        <p class="wallet-summary-note">{{ t('cart.cashNote') }}</p>
       </div>
 
       <div v-if="freeTotal > 0" class="total-row free-breakdown">
-        <span class="total-label">餐點原價</span>
+        <span class="total-label">{{ t('cart.originalPrice') }}</span>
         <span class="total-value mono">{{ formatMoney(total) }}</span>
       </div>
       <div v-if="freeTotal > 0" class="total-row free-total-row">
-        <span class="total-label">今日免費不收費</span>
+        <span class="total-label">{{ t('cart.freeToday') }}</span>
         <span class="total-value mono">- {{ formatMoney(freeTotal) }}</span>
       </div>
 
       <div v-if="items.length" class="total-row">
-        <span class="total-label">合計</span>
+        <span class="total-label">{{ t('cart.total') }}</span>
         <span class="total-value mono">{{ formatMoney(cashDueTotal) }}</span>
       </div>
+
+      <p v-if="items.length && orderingClosed" class="cutoff-note" role="status">
+        <i class="fas fa-lock" aria-hidden="true"></i>
+        {{ isAdmin ? t('cart.cutoffClosedAdmin', { time: cutoffTime }) : t('cart.cutoffClosedMember', { time: cutoffTime }) }}
+      </p>
 
       <button
         v-if="items.length"
@@ -620,9 +681,10 @@ defineExpose({ currentName, currentOwner, ownerPayload, triggerSubmit, resetToSe
         @click="submitCart"
       >
         <span v-if="submitting" class="submit-spinner" aria-hidden="true"></span>
-        <template v-if="submitting">送出中…</template>
-        <template v-else-if="items.length > 0">送出 {{ portionCount }} 份 · {{ formatMoney(cashDueTotal) }}</template>
-        <template v-else>送出訂單</template>
+        <template v-if="submitting">{{ t('cart.submitting') }}</template>
+        <template v-else-if="items.length > 0 && isTrackingOnlyPayment">{{ t('cart.submitPortions', { portions: portionCount }) }}</template>
+        <template v-else-if="items.length > 0">{{ t('cart.submitWithTotal', { portions: portionCount, amount: formatMoney(cashDueTotal) }) }}</template>
+        <template v-else>{{ t('cart.submitOrder') }}</template>
       </button>
       </div>
     </div>
@@ -761,6 +823,9 @@ defineExpose({ currentName, currentOwner, ownerPayload, triggerSubmit, resetToSe
 .pay-chip i { font-size: var(--text-micro); }
 .pay-chip.wallet { background: var(--bg-accent); color: var(--text-accent); }
 .pay-chip.cash   { background: var(--bg-highlight); color: var(--text-highlight); }
+.pay-chip.none   { background: var(--bg-inset); color: var(--text-secondary); }
+.cutoff-note { display: flex; gap: 6px; align-items: flex-start; margin: 0; color: var(--text-warning); font-size: var(--text-label); line-height: 1.5; }
+.cutoff-note i { margin-top: 3px; }
 
 .proxy-foot {
   display: flex;

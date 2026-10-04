@@ -1,4 +1,5 @@
 import { getLocalDateKey } from './format'
+import { t } from '../i18n'
 
 export function aggregateOrderStats(records) {
     const peopleMap = {}
@@ -10,8 +11,8 @@ export function aggregateOrderStats(records) {
     records.forEach(data => {
       const price = data.isFree ? 0 : Number(data.price) || 0
       const name = data.name || '?'
-      const storeName = data.storeName || '未知店家'
-      const mealName = `${storeName}・${data.meal || '未命名餐點'}`
+      const storeName = data.storeName || t('data.unknownStore')
+      const mealName = `${storeName}・${data.meal || t('data.unnamedMeal')}`
       const dayKey = getLocalDateKey(new Date(data.timestamp || Date.now()))
 
       if (!peopleMap[name]) peopleMap[name] = { name, count: 0, stores: new Set(), total: 0 }

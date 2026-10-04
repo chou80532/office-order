@@ -1,4 +1,5 @@
 import { isAddonMenuItem, menuItemKey, normalizeMenuCategory } from './menuCategories'
+import { t } from '../i18n'
 import { compactOptionSelections, optionSelectionsLabel, optionSelectionsPrice, normalizeOptionGroups } from './dishOptionGroups'
 
 export function hasNothingToChoose(dish, store) {
@@ -7,7 +8,7 @@ export function hasNothingToChoose(dish, store) {
   if (normalizeOptionGroups(variants[0]?.options).length || variants[0]?.unit) return false
   if ((store?.menuItems || store?.items || []).some(isAddonMenuItem)) return false
   const category = variants[0]?.category || dish.category || ''
-  if (store?.category === 'drink' || /飲料|飲品|茶|咖啡|果汁/.test(category)) return false
+  if (store?.category === 'drink' || /飲料|飲品|茶|咖啡|果汁|drink|tea|coffee|juice/i.test(category)) return false
   return true
 }
 
@@ -33,7 +34,7 @@ export function cartOptionSummary(item) {
   // 選項軸（口味、肉類…）已經寫進 name 了，購物車摘要不重複顯示，
   // 只有當品項名稱沒帶上它們（例如舊資料）時才補在這裡。
   const options = item.optionLabel && !String(item.name || '').includes(item.optionLabel) ? item.optionLabel : ''
-  const quantity = item.unit ? `${item.quantity || 1}${item.unit}` : Number(item.quantity) > 1 ? `${item.quantity}份` : ''
+  const quantity = item.unit ? `${item.quantity || 1}${item.unit}` : Number(item.quantity) > 1 ? t('data.portions', { count: item.quantity }) : ''
   return [spec, options, quantity, ...(item.addons || []).map(a => a.name)].filter(Boolean).join(' · ')
 }
 export function cartCustomNote(item) {
@@ -88,6 +89,6 @@ export function configuredCartItem({ dish, original, owner, storeName, addons, n
     customNote: note.trim(), addonMultiplier: multiplier,
     basePrice, addons: addons.map(a => ({ ...a })),
     price: basePrice + addonPrice + optionPrice,
-    note: [dish.unit ? `${qty}${dish.unit}` : qty > 1 ? `${qty}份` : '', note.trim()].filter(Boolean).join('、'),
+    note: [dish.unit ? `${qty}${dish.unit}` : qty > 1 ? t('data.portions', { count: qty }) : '', note.trim()].filter(Boolean).join('、'),
   }
 }

@@ -9,6 +9,8 @@ import * as constants from '../src/constants'
 import * as sizeHelpers from '../src/utils/sizeOrder'
 import * as formatHelpers from '../src/utils/format'
 import * as optionHelpers from '../src/utils/dishOptionGroups'
+import * as noteGroupHelpers from '../src/utils/defaultNoteGroups'
+import * as i18nHelpers from '../src/i18n'
 import { groupDishOptions } from '../src/utils/dishOptions'
 import { menuItemKey } from '../src/utils/menuCategories'
 
@@ -21,7 +23,7 @@ const scrollMock = { lockBodyScroll: vi.fn(), unlockBodyScroll: vi.fn() }
 const { descriptor } = parse(readFileSync(new URL('../src/components/order/DishOptionsModal.vue', import.meta.url), 'utf8'))
 const compiled = compileScript(descriptor, { id: 'dish-options-test', inlineTemplate: true }).content
 const modules = { vue: Vue, '../../composables/useScrollLock': scrollMock, '../../composables/useFirestore': firestoreMock, '../../utils/menuCategories': menuHelpers, '../../utils/dishOptions': dishHelpers, '../../utils/sizeOrder': sizeHelpers, '../../constants': constants }
-Object.assign(modules, { '../../utils/format': formatHelpers, '../../utils/dishOptionGroups': optionHelpers })
+Object.assign(modules, { '../../utils/format': formatHelpers, '../../utils/dishOptionGroups': optionHelpers, '../../utils/defaultNoteGroups': noteGroupHelpers, '../../i18n': i18nHelpers })
 const clientSource = compiled.replace(/import \{([^}]+)\} from ['"]([^'"]+)['"];?/g, (_, bindings, path) => `const {${bindings.replace(/\bas\b/g, ':')}} = modules[${JSON.stringify(path)}];`).replace('export default', 'return')
 const DishOptionsModal = new Function('modules', clientSource)(modules)
 

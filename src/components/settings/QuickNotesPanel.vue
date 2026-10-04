@@ -9,21 +9,21 @@
             v-model="newGroupName"
             type="text"
             class="note-add-input"
-            placeholder="新增一個備註群組，例如「冰量」…"
+            :placeholder="t('quickNotes.newGroupPlaceholder')"
             maxlength="10"
             @keydown.enter="addGroup"
           >
-          <button class="note-add-btn" @click="addGroup" :disabled="!newGroupName.trim()">新增群組</button>
+          <button class="note-add-btn" @click="addGroup" :disabled="!newGroupName.trim()">{{ t('quickNotes.addGroup') }}</button>
         </div>
 
-        <StatusNotice v-if="noteGroups.length === 0" title="尚無快捷備註群組" description="可先新增甜度、冰量或其他常用備註群組。" />
+        <StatusNotice v-if="noteGroups.length === 0" :title="t('quickNotes.emptyTitle')" :description="t('quickNotes.emptyText')" />
 
         <section v-for="(group, gIdx) in noteGroups" :key="gIdx" class="note-group-block">
           <div class="note-group-header">
             <i :class="'fas fa-' + group.icon" aria-hidden="true"></i>
             <span class="note-group-label">{{ group.label }}</span>
-            <span class="note-group-count">{{ group.notes.length }} 則</span>
-            <button class="btn-remove-group" @click="removeGroup(gIdx)" title="刪除群組" aria-label="刪除群組">
+            <span class="note-group-count">{{ t('quickNotes.noteCount', { count: group.notes.length }) }}</span>
+            <button class="btn-remove-group" @click="removeGroup(gIdx)" :title="t('quickNotes.removeGroup')" :aria-label="t('quickNotes.removeGroup')">
               <i class="fas fa-trash-alt"></i>
             </button>
           </div>
@@ -44,14 +44,14 @@
               @drop.prevent="handleNoteDrop(gIdx, nIdx)"
               @dragend="handleNoteDragEnd"
             >
-              <span class="drag-handle" aria-hidden="true" title="拖曳調整順序">
+              <span class="drag-handle" aria-hidden="true" :title="t('quickNotes.dragHint')">
                 <i class="fas fa-grip-vertical"></i>
               </span>
               <span class="note-text">{{ note }}</span>
-              <button class="row-icon-btn" @click="editNote(gIdx, nIdx)" :title="`編輯「${note}」`" :aria-label="`編輯「${note}」`">
+              <button class="row-icon-btn" @click="editNote(gIdx, nIdx)" :title="t('quickNotes.editNoteAria', { note })" :aria-label="t('quickNotes.editNoteAria', { note })">
                 <i class="fas fa-pen"></i>
               </button>
-              <button class="row-icon-btn danger" @click="removeNoteFromGroup(gIdx, nIdx)" :title="`刪除「${note}」`" :aria-label="`刪除「${note}」`">
+              <button class="row-icon-btn danger" @click="removeNoteFromGroup(gIdx, nIdx)" :title="t('quickNotes.removeNoteAria', { note })" :aria-label="t('quickNotes.removeNoteAria', { note })">
                 <i class="fas fa-times"></i>
               </button>
             </div>
@@ -62,7 +62,7 @@
                 v-model="groupInputs[gIdx]"
                 type="text"
                 class="inline-add-input"
-                :placeholder="`新增一則「${group.label}」備註…`"
+                :placeholder="t('quickNotes.newNotePlaceholder', { group: group.label })"
                 maxlength="20"
                 @keydown.enter="addNoteToGroup(gIdx)"
               >
@@ -70,7 +70,7 @@
                 class="inline-add-btn"
                 :disabled="!groupInputs[gIdx]?.trim()"
                 @click="addNoteToGroup(gIdx)"
-              >新增</button>
+              >{{ t('quickNotes.add') }}</button>
             </div>
           </div>
         </section>
@@ -79,7 +79,7 @@
           <button class="btn btn-primary footer-btn" @click="saveQuickNotes" :disabled="isSavingQuickNotes">
             <span v-if="isSavingQuickNotes" class="mini-spinner"></span>
             <template v-else><i class="fas fa-save"></i></template>
-            {{ isSavingQuickNotes ? '儲存中...' : `儲存備註（${totalNoteCount} 則）` }}
+            {{ isSavingQuickNotes ? t('common.saving') : t('quickNotes.saveWithCount', { count: totalNoteCount }) }}
           </button>
         </div>
       </div>
@@ -87,9 +87,9 @@
       <!-- 右欄：套用預覽與說明 -->
       <aside class="notes-aside">
         <div class="aside-card">
-          <h3 class="aside-title">套用預覽</h3>
+          <h3 class="aside-title">{{ t('quickNotes.previewTitle') }}</h3>
           <div class="preview-dish">
-            <p class="preview-dish-name">範例餐點 <span class="preview-price">{{ formatMoney(95) }}</span></p>
+            <p class="preview-dish-name">{{ t('quickNotes.sampleDish') }} <span class="preview-price">{{ formatMoney(samplePrice) }}</span></p>
             <template v-if="previewGroups.length">
               <div v-for="group in previewGroups" :key="group.label" class="preview-group">
                 <p class="preview-group-label">
@@ -107,20 +107,18 @@
                 </div>
               </div>
               <p class="preview-note-line">
-                <span class="preview-note-label">備註欄</span>
-                <span class="preview-note-text">{{ previewSelected.length ? previewSelected.join('、') : '點上面的標籤試試看' }}</span>
+                <span class="preview-note-label">{{ t('quickNotes.noteField') }}</span>
+                <span class="preview-note-text">{{ previewSelected.length ? previewSelected.join(t('common.listSeparator')) : t('quickNotes.previewTry') }}</span>
               </p>
             </template>
-            <span v-else class="preview-empty">先在左邊新增備註</span>
+            <span v-else class="preview-empty">{{ t('quickNotes.previewEmpty') }}</span>
           </div>
-          <p class="aside-desc">成員點餐時，備註會照群組以標籤呈現，點一下即可加進餐點的備註欄（上面可以實際點看看）。</p>
+          <p class="aside-desc">{{ t('quickNotes.previewDesc') }}</p>
         </div>
 
         <div class="aside-card">
-          <h3 class="aside-title">共 {{ totalNoteCount }} 則備註</h3>
-          <p class="aside-desc">
-            拖曳可調整順序，愈上面的備註在點餐頁愈前面顯示。飲料店會多出「冰量／甜度／溫度」群組；記得按下方「儲存備註」才會生效。
-          </p>
+          <h3 class="aside-title">{{ t('quickNotes.totalTitle', { count: totalNoteCount }) }}</h3>
+          <p class="aside-desc">{{ t('quickNotes.totalDesc') }}</p>
         </div>
       </aside>
     </div>
@@ -129,7 +127,10 @@
 
 <script setup>
 import StatusNotice from "../ui/StatusNotice.vue"
-import { formatMoney } from '../../utils/format'
+import { formatMoney, getAppCurrency } from '../../utils/format'
+import { defaultNoteGroups, noteGroupRole } from '../../utils/defaultNoteGroups'
+import { useFirestore } from '../../composables/useFirestore'
+import { t, translateError } from '../../i18n'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { doc, setDoc, getDoc } from 'firebase/firestore'
 import { db } from '../../firestore'
@@ -137,15 +138,14 @@ import { useToast } from '../../composables/useToast'
 import { confirmDialog, promptDialog } from '../../composables/useDialog'
 
 const { showToast } = useToast()
+const { systemSettings } = useFirestore()
 
-const defaultGroups = [
-  { label: '冰量', icon: 'snowflake', notes: ['正常冰', '少冰', '微冰', '去冰'] },
-  { label: '甜度', icon: 'candy-cane', notes: ['正常糖', '半糖', '微糖', '無糖'] },
-  { label: '溫度', icon: 'temperature-high', notes: ['溫的', '熱的'] },
-  { label: '其他', icon: 'comment-dots', notes: ['不要豆芽菜', '不加蔥', '不加香菜'] }
-]
-
-const ICON_MAP = { '冰量': 'snowflake', '甜度': 'candy-cane', '溫度': 'temperature-high', '加料': 'plus-circle', '份量': 'weight-hanging', '其他': 'comment-dots' }
+// 預設群組跟著系統語言；管理員儲存過自己的群組後就以 Firestore 為準。
+const defaultGroups = () => defaultNoteGroups(systemSettings?.value?.locale)
+const ROLE_ICONS = { ice: 'snowflake', sugar: 'candy-cane', temperature: 'temperature-high', portion: 'weight-hanging', other: 'comment-dots' }
+const groupIcon = label => ROLE_ICONS[noteGroupRole(label)] || (/^(加料|add-?ons?|toppings?|extras?)$/i.test(label) ? 'plus-circle' : 'tag')
+// 範例餐點的價格：新台幣顯示 95 元，有小數的幣別顯示 9.50。
+const samplePrice = computed(() => (getAppCurrency().decimals ? 950 : 95))
 
 const noteGroups = ref([])
 const groupInputs = reactive({})
@@ -172,26 +172,26 @@ const loadQuickNotes = async () => {
     if (snap.exists()) {
       const data = snap.data()
       if (Array.isArray(data.groups) && data.groups.length > 0) noteGroups.value = data.groups.map(g => ({ ...g, notes: [...g.notes] }))
-      else if (Array.isArray(data.notes) && data.notes.length > 0) noteGroups.value = [{ label: '備註', icon: 'comment-dots', notes: [...data.notes] }]
-      else noteGroups.value = defaultGroups.map(g => ({ ...g, notes: [...g.notes] }))
-    } else { noteGroups.value = defaultGroups.map(g => ({ ...g, notes: [...g.notes] })) }
-  } catch (e) { console.error('讀取快捷備註失敗:', e); noteGroups.value = defaultGroups.map(g => ({ ...g, notes: [...g.notes] })) }
+      else if (Array.isArray(data.notes) && data.notes.length > 0) noteGroups.value = [{ label: t('data.legacyNotesGroup'), icon: 'comment-dots', notes: [...data.notes] }]
+      else noteGroups.value = defaultGroups()
+    } else { noteGroups.value = defaultGroups() }
+  } catch (e) { console.error('[QuickNotes] load failed', e); noteGroups.value = defaultGroups() }
 }
 
 const addGroup = () => {
   const label = newGroupName.value.trim()
   if (!label) return
-  if (noteGroups.value.some(g => g.label === label)) { showToast(`「${label}」群組已存在`); return }
-  noteGroups.value.push({ label, icon: ICON_MAP[label] || 'tag', notes: [] })
+  if (noteGroups.value.some(g => g.label === label)) { showToast(t('quickNotes.groupExists', { label })); return }
+  noteGroups.value.push({ label, icon: groupIcon(label), notes: [] })
   newGroupName.value = ''
 }
 
 const removeGroup = async (gIdx) => {
   const confirmed = await confirmDialog({
-    title: '刪除備註群組？',
-    message: `將刪除「${noteGroups.value[gIdx].label}」群組與其中 ${noteGroups.value[gIdx].notes.length} 個備註選項。`,
+    title: t('quickNotes.removeGroupTitle'),
+    message: t('quickNotes.removeGroupMessage', { label: noteGroups.value[gIdx].label, count: noteGroups.value[gIdx].notes.length }),
     variant: 'danger',
-    confirmText: '刪除群組',
+    confirmText: t('quickNotes.removeGroup'),
   })
   if (!confirmed) return
   noteGroups.value.splice(gIdx, 1)
@@ -200,7 +200,7 @@ const removeGroup = async (gIdx) => {
 const addNoteToGroup = (gIdx) => {
   const note = (groupInputs[gIdx] || '').trim()
   if (!note) return
-  if (noteGroups.value[gIdx].notes.includes(note)) { showToast(`「${note}」已存在`); return }
+  if (noteGroups.value[gIdx].notes.includes(note)) { showToast(t('quickNotes.noteExists', { note })); return }
   noteGroups.value[gIdx].notes.push(note); groupInputs[gIdx] = ''
 }
 
@@ -209,15 +209,15 @@ const removeNoteFromGroup = (gIdx, nIdx) => { noteGroups.value[gIdx].notes.splic
 const editNote = async (gIdx, nIdx) => {
   const current = noteGroups.value[gIdx].notes[nIdx]
   const input = await promptDialog({
-    title: '編輯備註',
-    message: '修改備註文字：',
+    title: t('quickNotes.editTitle'),
+    message: t('quickNotes.editMessage'),
     defaultValue: current,
-    confirmText: '儲存',
+    confirmText: t('common.save'),
   })
   if (input === null) return
   const next = input.trim()
-  if (!next) { showToast('備註不能為空', 'error'); return }
-  if (next !== current && noteGroups.value[gIdx].notes.includes(next)) { showToast(`「${next}」已存在`, 'error'); return }
+  if (!next) { showToast(t('quickNotes.noteRequired'), 'error'); return }
+  if (next !== current && noteGroups.value[gIdx].notes.includes(next)) { showToast(t('quickNotes.noteExists', { note: next }), 'error'); return }
   noteGroups.value[gIdx].notes[nIdx] = next
 }
 
@@ -264,8 +264,8 @@ const handleNoteDragEnd = () => {
 
 const saveQuickNotes = async () => {
   isSavingQuickNotes.value = true
-  try { await setDoc(doc(db, 'settings', 'quickNotes'), { groups: noteGroups.value }); showToast(`快捷備註已儲存（${totalNoteCount.value} 則）`) }
-  catch (err) { showToast('儲存失敗: ' + err.message, 'error') }
+  try { await setDoc(doc(db, 'settings', 'quickNotes'), { groups: noteGroups.value }); showToast(t('quickNotes.saved', { count: totalNoteCount.value })) }
+  catch (err) { showToast(t('quickNotes.saveFailed', { message: translateError(err) }), 'error') }
   finally { isSavingQuickNotes.value = false }
 }
 

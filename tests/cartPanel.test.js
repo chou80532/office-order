@@ -8,6 +8,7 @@ import { resetPendingCart } from '../src/composables/usePendingCart'
 const state = vi.hoisted(() => ({
   admin: false, balance: 500, failRead: false,
   reads: [], freeStores: [],
+  settings: { timeZone: 'Asia/Taipei', paymentMethods: { wallet: true, cash: true }, proxyOrdering: 'all' },
 }))
 vi.mock('../src/firestore', () => ({ db: {} }))
 vi.mock('firebase/firestore', () => ({
@@ -24,6 +25,7 @@ vi.mock('../src/composables/useAuth', () => ({
 }))
 vi.mock('../src/composables/useFirestore', () => ({
   useFirestore: () => ({
+    systemSettings: { value: state.settings },
     membersWithUid: { value: [{ name: 'Other', uid: 'other' }] },
     noteGroups: { value: [] }, dailyFreeStores: { value: state.freeStores },
     requireMemberData() {}, releaseMemberData() {}, requireQuickNotes() {}, releaseQuickNotes() {},
@@ -58,7 +60,7 @@ describe('購物車餘額與代訂送出', () => {
       vi.unstubAllGlobals()
     }
   })
-  beforeEach(() => Object.assign(state, { admin: false, balance: 500, failRead: false, reads: [], freeStores: [] }))
+  beforeEach(() => Object.assign(state, { admin: false, balance: 500, failRead: false, reads: [], freeStores: [], settings: { timeZone: 'Asia/Taipei', paymentMethods: { wallet: true, cash: true }, proxyOrdering: 'all' } }))
   it('餐點列顯示規格、加料與備註，不重複店名，份數與合計一致', async () => {
     const { html } = await render(false, { name: '牛肉麵(大)', displayName: '牛肉麵', storeName: '隱藏店名', variantLabel: '大', quantity: 2, price: 250, customNote: '不加蔥', note: '2份、不加蔥', addons: [{ name: '蛋', price: 15 }] })
     expect(html).not.toContain('隱藏店名')
@@ -96,6 +98,26 @@ describe('購物車餘額與代訂送出', () => {
     state.balance = 50
     expect((await render(true)).submitDisabled).toBe(true)
     expect(state.reads).toEqual(['other'])
+  })
+  it('僅管理員可代訂時，一般成員看不到代訂按鈕與說明', async () => {
+    state.settings = { ...state.settings, proxyOrdering: 'admins' }
+    const member = await render()
+    expect(member.html).not.toContain('class="proxy-btn"')
+    expect(member.html).not.toContain('代訂說明')
+    state.admin = true
+    expect((await render()).html).toContain('class="proxy-btn"')
+  })
+  it('停用錢包時本人改列現金，不讀取錢包餘額', async () => {
+    state.settings = { ...state.settings, paymentMethods: { wallet: false, cash: true } }
+    const result = await render(false, { paymentMethod: 'cash' })
+    expect(state.reads).toEqual([])
+    expect(result.html).toMatch(/class="(cash pay-chip|pay-chip cash)"/)
+    expect(result.submitDisabled).toBe(false)
+  })
+  it('停用現金時代訂選單不提供手動輸入姓名', async () => {
+    expect((await render(true)).html).toContain('手動輸入姓名')
+    state.settings = { ...state.settings, paymentMethods: { wallet: true, cash: false } }
+    expect((await render(true)).html).not.toContain('手動輸入姓名')
   })
   it('讀取失敗顯示未知餘額，不誤報 0 元或鎖死送出', async () => {
     state.failRead = true

@@ -10,17 +10,25 @@ The repository starts in local emulator mode. Its example configuration uses the
 
 ## Features
 
-- Create and manage stores, menus and daily ordering settings.
+- Create and manage stores, menus and daily ordering settings. Import and export menus as CSV (for spreadsheets) or JSON (for backups and moving between deployments).
 - Submit, edit and cancel individual orders with server-side validation and aggregation.
-- Track member wallets, cash collection and order totals.
-- Register members through admin-created invitation codes.
+- Close ordering at a daily cutoff time. The server rejects member orders, edits and cancellations after the cutoff; administrators can move, lift or close today's cutoff from **Today's orders**.
+- Choose how money is handled: member wallets, cash collection, both, or tracking only (orders are recorded and summarized, nobody is charged).
+- Optionally credit a monthly meal allowance to every member's wallet.
+- Register members with administrator-created invitation codes, an allowlist of company email domains, or Google sign-in.
+- Decide who may order on behalf of others: everyone, members who have agreed to it, administrators only, or nobody.
+- English and Traditional Chinese interface. The organization picks a default language and each member can choose their own.
+- Configure the time zone, currency, amount limits, organization name, logo and accent color from the admin interface.
+- Send notifications when ordering opens, shortly before the cutoff, when ordering closes and when a store is replaced, to Slack, Discord, Microsoft Teams, Telegram or any JSON webhook, and as browser push notifications.
+- Optionally delete old orders and ledger entries automatically after a retention period.
+- Create the first administrator from a one-time setup page instead of editing the Firebase Console.
 - Review order summaries and export records to Excel.
 - Develop against Firebase emulators with fictional seed data.
 
 ## Technology
 
-- Vue 3, Vue Router and Vite
-- Firebase Authentication, Firestore, Cloud Storage and Cloud Functions
+- Vue 3, Vue Router, vue-i18n and Vite
+- Firebase Authentication, Firestore, Cloud Storage, Cloud Functions and Cloud Messaging
 - Node.js 22 for Cloud Functions
 - Vitest and ESLint
 
@@ -84,30 +92,63 @@ The browser loads DM Sans and Noto Sans TC from Google Fonts and Font Awesome Fr
 | `VITE_FIREBASE_APP_ID` | Web app ID for your own Firebase project. |
 | `VITE_FIREBASE_FUNCTIONS_REGION` | Cloud Functions region; defaults to `us-central1`. |
 | `VITE_FIREBASE_APPCHECK_SITE_KEY` | Optional App Check site key for a real Firebase deployment. |
+| `VITE_FIREBASE_VAPID_KEY` | Optional Web Push certificate key (Firebase Console → Project settings → Cloud Messaging). Browser notifications stay hidden without it. |
 | `VITE_USE_FIREBASE_EMULATORS` | Defaults to emulator mode. Set to `false` only when intentionally using your own Firebase project. |
 | `VITE_FIREBASE_EMULATOR_HOST` | Local emulator host; defaults to `127.0.0.1`. |
 
 Firebase web configuration is public client configuration. Never put Service Account JSON files, private keys, Firebase Admin credentials or server secrets in Git or frontend environment variables.
 
+Cloud Functions read server-side values from `functions/.env.<project-id>` (deployment) or `functions/.env.local` (emulators). Both are ignored by Git; `functions/.env.example` documents them.
+
+| Variable | Purpose |
+| --- | --- |
+| `SETUP_TOKEN` | One-time token for the first-run setup page; at least 16 random characters. Setup closes automatically once an administrator exists. |
+
+Organization settings are stored in Firestore (`settings/system`) and changed under **Settings → System settings**, so they do not require a rebuild. Without that document the app keeps the defaults of earlier versions: Traditional Chinese, `Asia/Taipei`, New Taiwan dollars, wallet and cash enabled, every member may order for others, and no cutoff. Webhook settings are stored separately in `settings/notifications`, which only administrators can read.
+
+## Settings for your organization
+
+| Section | What it controls |
+| --- | --- |
+| General | Default language, time zone, currency and amount limits (highest item price, highest single top-up, low-balance warning). |
+| Payment | Wallet, cash, both, or tracking only; who may order for others; the monthly allowance. |
+| Ordering | The default daily cutoff time. Administrators can change today's cutoff from **Today's orders**. |
+| Registration | Company email domains that may register themselves, and Google sign-in. Invitation codes always work. |
+| Branding | Organization name, logo URL (https) and accent color. The name and logo also appear on the sign-in page. |
+| Notifications | Webhook URL, which events to send and how many minutes before the cutoff to remind. |
+| Retention | Delete orders and ledger entries older than a number of days (at least 30). Off by default. |
+
+Things to know before changing them:
+
+- **Currency.** Amounts are stored as integers in the currency's smallest unit (cents for USD, yen for JPY, dollars for TWD). Pick the currency during setup. Switching later between currencies with a different number of decimals reinterprets existing amounts (for example 110 TWD becomes 1.10 USD); the settings page warns before saving.
+- **Tracking only.** When both wallet and cash are off, orders are recorded and summarized but nobody is charged and no cash receivables are created. The wallet and cash pages are hidden.
+- **Proxy consent.** In "members who agree" mode each member allows or refuses proxy orders under **Personal settings** in the navigation menu. Administrators can always order for others. The setup page proposes this mode for new deployments.
+- **Monthly allowance.** Credited once per member per month to the wallet, starting with the month you choose; Cloud Functions check every hour. Administrators can also credit the current month by hand. Requires the wallet to be enabled.
+- **Self registration.** Members whose verified email belongs to an allowed domain can set their name and join without an invitation. Google accounts are verified automatically; email/password accounts must click the verification email first. Enable the **Google** provider in Firebase Authentication before turning on Google sign-in.
+- **Notifications.** The webhook receives a JSON `POST` with `event`, `title`, `body`, `text` (used by Slack and Telegram), `content` (used by Discord), `data` and `timestamp`. For Telegram use `https://api.telegram.org/bot<token>/sendMessage?chat_id=<chat id>`. For Microsoft Teams, use a Workflows "post to a channel when a webhook request is received" flow that reads `text`. Services that need custom headers, such as the LINE Messaging API, need a small relay in between. Browser push requires `VITE_FIREBASE_VAPID_KEY`.
+- **Retention.** Runs once a day. It deletes orders, cash receivables, cash and wallet logs, request records, expired invitation codes and dining records older than the limit. Unpaid cash receivables and their orders are kept, and wallet balances are not changed. Use **Settings → Cleanup** for one-off cleanups that also correct balances.
+- **Menu import and export.** Open **Settings → Stores → Import / export**. CSV needs the columns `store`, `item` and `price` (optional: `store_category`, `phone`, `address`, `category`, `unit`, `options`); prices are written in normal units such as `12.50`, and option groups use the same text format as the menu editor, separated by `;`. JSON files must come from this app and use the same currency. Existing stores can be replaced or skipped; their menu images are never changed.
+
 ## Database and first administrator
 
 Local development uses the included Firestore and Storage rules with the emulator. The demo seed writes only to the local Auth, Firestore and Storage emulators.
 
-A fresh Firebase deployment needs one administrator bootstrapped through the Firebase Console before invitation based registration can begin. Follow [the first administrator guide](docs/production-bootstrap.md) to create the Auth user and matching Firestore documents. The demo seed shows the expected field shapes, but is deliberately restricted to the local demo project. Review the Firestore and Storage rules before deploying.
+A fresh Firebase deployment needs one administrator before invitation based registration can begin. Set `SETUP_TOKEN` before deploying, then open `/setup` on the deployed site to create that administrator and choose the initial time zone and ordering rules. The sign-in page links to it while no administrator exists. [The first administrator guide](docs/production-bootstrap.md) describes the setup page and a manual Firebase Console fallback. Review the Firestore and Storage rules before deploying.
 
 ## Production deployment
 
-1. Create and configure your own Firebase project with Authentication, Firestore, Storage, Cloud Functions and Hosting enabled.
-2. Create `.env` from `.env.example` and replace every demo value with that project's web app configuration. Set `VITE_USE_FIREBASE_EMULATORS=false` and set the project's ID and Functions region.
-3. Build the web app and deploy with an explicit project ID:
+1. Create and configure your own Firebase project with Authentication, Firestore, Storage, Cloud Functions and Hosting enabled. Cloud Functions, including the scheduled jobs for reminders, the monthly allowance and retention, require the Blaze plan. Enable the Email/Password provider, and the Google provider if you plan to offer Google sign-in.
+2. Create `.env` from `.env.example` and replace every demo value with that project's web app configuration. Set `VITE_USE_FIREBASE_EMULATORS=false` and set the project's ID and Functions region. Add `VITE_FIREBASE_VAPID_KEY` if you want browser notifications.
+3. Create `functions/.env.YOUR_FIREBASE_PROJECT_ID` with a random `SETUP_TOKEN` (see `functions/.env.example`).
+4. Build the web app and deploy with an explicit project ID:
 
    ```sh
    npm run build
    firebase deploy --project YOUR_FIREBASE_PROJECT_ID
    ```
 
-4. Bootstrap the first administrator in that project, then create invitation codes from the admin interface.
-5. Keep service account credentials outside the repository. Back up Firestore and Storage before upgrades, and review the rules and Functions changes before deploying.
+5. Open `/setup` on the deployed site to create the first administrator and choose the language, time zone, currency and payment rules. Then add members with invitation codes, or allow company email domains under **Settings → System settings**.
+6. Keep service account credentials outside the repository. Back up Firestore and Storage before upgrades, and review the rules and Functions changes before deploying.
 
 The repository has no default Firebase project alias. Deployment commands require an explicit project ID.
 

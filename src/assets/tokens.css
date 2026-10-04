@@ -6,8 +6,11 @@
   --ink-3: #362a1f;
   --paper: #f3e7d2;
   --paper-2: #ecdbbd;
+  /* 品牌主題色：管理員可在「系統設定 → 品牌」換成其他預設色（src/utils/branding.js），
+     所以錯誤、扣款等語意紅色改用下方固定的 --brick，不跟著主題色變動。 */
   --persimmon: #c4502d;
   --persimmon-dark: #a1401f;
+  --brick: #a1401f;
   --jade: #45684f;
   --gold: #c99a3d;
   --gold-dark: #a87c26;
@@ -50,10 +53,10 @@
   --success-hover: var(--jade);
   --bg-success: var(--paper-2);
   --text-success: var(--jade);
-  --danger: var(--persimmon-dark);
-  --danger-hover: var(--persimmon-dark);
+  --danger: var(--brick);
+  --danger-hover: var(--brick);
   --bg-danger: var(--paper-danger);
-  --text-danger: var(--persimmon-dark);
+  --text-danger: var(--brick);
   --highlight: var(--jade);
   --bg-highlight: var(--paper-3);
   --text-highlight: var(--jade);
@@ -65,10 +68,10 @@
   --admin-text: var(--persimmon-dark);
   --admin-border: var(--persimmon);
   --wallet-credit-color: var(--jade);
-  --wallet-debit-color: var(--persimmon-dark);
+  --wallet-debit-color: var(--brick);
   --wallet-refund-color: var(--jade);
   --wallet-adjust-color: var(--ink-faint);
-  --wallet-net-color: var(--persimmon-dark);
+  --wallet-net-color: var(--brick);
   --cash-color: var(--jade);
   --sidebar-bg: var(--ink-2);
   --sidebar-text: var(--ink-soft);
@@ -77,7 +80,7 @@
   --sidebar-border: var(--line);
   --sidebar-fg: var(--paper);
   --cream: var(--paper-2);
-  --paprika: var(--persimmon-dark);
+  --paprika: var(--brick);
   --paprika-soft: var(--paper-2);
   --mint: var(--jade);
   --mint-soft: var(--paper-2);
@@ -102,7 +105,7 @@
   --tag-breakfast-bg: var(--paper-2);
   --tag-breakfast-text: var(--gold-deep);
   --tag-lunch-bg: var(--paper-2);
-  --tag-lunch-text: var(--persimmon-dark);
+  --tag-lunch-text: var(--brick);
   --tag-dinner-bg: var(--paper-2);
   --tag-dinner-text: var(--plum);
   --tag-drink-bg: var(--paper-2);

@@ -151,7 +151,7 @@ describe('設定店家交易回歸', () => {
     await b.order({ storeName: 'Drink', price: 30 })
     await b.call('cancelOrdersWithWalletRefund', settingsPayload(b, ['New', 'Third'], ['New'], [
       { source: 'Store', target: 'New' }, { source: 'Drink', target: 'Third' },
-    ]), 'proxy')
+    ]))
     expect(b.balance()).toBe(1000)
     expect(Object.values(b.day().needs).map(n => n.targetStore).sort()).toEqual(['New', 'Third'])
     expect(b.records.get('settings/daily')).toMatchObject({ activeStores: ['New', 'Third'], freeStores: ['New'] })
@@ -190,11 +190,30 @@ describe('設定店家交易回歸', () => {
   })
   it('沒有訂單可正常改設定；未註冊與偽造換店不得取消任意單', async () => {
     const b = setup()
-    const payload = settingsPayload(b, ['New'], ['New'])
+    const payload = settingsPayload(b, ['New'])
     await expect(b.call('cancelOrdersWithWalletRefund', payload, 'unregistered')).rejects.toThrow('需要已註冊')
     await b.call('cancelOrdersWithWalletRefund', payload, 'proxy')
-    expect(b.records.get('settings/daily').freeStores).toEqual(['New'])
+    expect(b.records.get('settings/daily')).toMatchObject({ activeStores: ['New'], freeStores: [] })
     await expect(b.call('cancelOrdersWithWalletRefund', { ...payload, orderIds: ['injected'] })).rejects.toThrow('不可指定個別訂單')
+  })
+  it('一般成員不可新增或取消免費店家，只有管理員可以', async () => {
+    const b = setup()
+    const before = structuredClone([...b.records])
+    await expect(b.call('cancelOrdersWithWalletRefund', settingsPayload(b, ['Store'], ['Store']), 'proxy')).rejects.toThrow('只有管理員可以設定免費店家')
+    await expect(b.call('cancelOrdersWithWalletRefund', settingsPayload(b, ['Store', 'New'], ['New']), 'proxy')).rejects.toThrow('只有管理員可以設定免費店家')
+    expect([...b.records]).toEqual(before)
+    b.freeStore()
+    await expect(b.call('cancelOrdersWithWalletRefund', settingsPayload(b, ['Store']), 'proxy')).rejects.toThrow('只有管理員可以設定免費店家')
+    await b.call('cancelOrdersWithWalletRefund', settingsPayload(b, ['Store', 'New'], ['Store', 'New']))
+    expect(b.records.get('settings/daily').freeStores).toEqual(['Store', 'New'])
+  })
+  it('一般成員換掉免費店家時，免費設定隨原店失效、不會轉移到新店', async () => {
+    const b = setup()
+    b.freeStore()
+    await b.order()
+    await expect(b.call('cancelOrdersWithWalletRefund', settingsPayload(b, ['New'], ['New'], [{ source: 'Store', target: 'New' }]), 'proxy')).rejects.toThrow('只有管理員可以設定免費店家')
+    await b.call('cancelOrdersWithWalletRefund', settingsPayload(b, ['New'], [], [{ source: 'Store', target: 'New' }]), 'proxy')
+    expect(b.records.get('settings/daily')).toMatchObject({ activeStores: ['New'], freeStores: [] })
   })
   it('補點後加點再刪除第一筆，不得誤報仍需補點', async () => {
     const b = setup()

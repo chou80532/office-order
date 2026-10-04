@@ -6,7 +6,7 @@ const PAGE_SIZE = 200
 // 所選區間自動讀完全部頁，僅在完整成功後回傳，避免將部分資料當成完整報表。
 export async function fetchOrdersInRange(startMs, endMs, isCurrent = () => true) {
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs >= endMs) {
-    throw new Error('請選擇有效的起訖日期')
+    throw new Error('INVALID_RANGE')
   }
   const records = new Map()
   let cursor = null

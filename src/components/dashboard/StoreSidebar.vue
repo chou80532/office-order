@@ -1,6 +1,8 @@
 <script setup>
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useScrollLock } from '../../composables/useScrollLock'
+import { compareText } from '../../utils/format'
+import { t } from '../../i18n'
 
 const props = defineProps({
   orders: { type: Array, default: () => [] },
@@ -32,17 +34,17 @@ const singleStoreName = computed(() => storeNames.value.length === 1 ? storeName
 
 const storeSummary = computed(() => {
   if (summaryState.value === 'empty') {
-    return { status: '尚無訂單', detail: '還沒有可判斷的店家資料。' }
+    return { status: t('dashboard.summary.emptyStatus'), detail: t('dashboard.summary.emptyDetail') }
   }
   if (summaryState.value === 'same') {
     return {
-      status: '全部同店',
-      detail: `${props.orders.length} 筆訂單皆為「${singleStoreName.value}」，可直接彙整下單。`
+      status: t('dashboard.summary.sameStatus'),
+      detail: t('dashboard.summary.sameDetail', { count: props.orders.length, store: singleStoreName.value })
     }
   }
   return {
-    status: '今天有多家店',
-    detail: storeNames.value.join('、')
+    status: t('dashboard.summary.multiStatus'),
+    detail: storeNames.value.join(t('common.listSeparator'))
   }
 })
 
@@ -50,16 +52,16 @@ const groupedMeals = computed(() => {
   const storeMap = new Map()
 
   props.orders.forEach((order) => {
-    const storeName = (order.storeName || order.store || '未分類店家').trim() || '未分類店家'
+    const storeName = (order.storeName || order.store || '').trim() || t('common.unknownStore')
     const mealName = (order.meal || '').trim()
     if (!mealName) return
 
     if (!storeMap.has(storeName)) storeMap.set(storeName, new Map())
 
     const mealMap = storeMap.get(storeName)
-    // 多份餐點以「N份、備註」存入訂單；電話彙整必須計份數，不能只數文件。
-    const quantityMatch = String(order.note || '').match(/^([1-9]\d?)份(?:、|$)/)
-    const portions = quantityMatch ? Number(quantityMatch[1]) : 1
+    // 多份餐點以「N份、備註」（英文介面為「×N、備註」）存入訂單；電話彙整必須計份數，不能只數文件。
+    const quantityMatch = String(order.note || '').match(/^(?:([1-9]\d?)份|×([1-9]\d?))(?:、|$)/)
+    const portions = quantityMatch ? Number(quantityMatch[1] || quantityMatch[2]) : 1
     const note = normalizeNote(quantityMatch ? order.note.slice(quantityMatch[0].length) : order.note || '')
 
     if (!mealMap.has(mealName)) {
@@ -77,10 +79,10 @@ const groupedMeals = computed(() => {
       .map(item => ({
         ...item,
         noteSummary: [...item.noteMap.entries()]
-          .map(([note, count]) => `${count} 份${note}`)
-          .join('、')
+          .map(([note, count]) => t('dashboard.summary.noteCount', { count, note }))
+          .join(t('dashboard.summary.noteSeparator'))
       }))
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-TW'))
+      .sort((a, b) => b.count - a.count || compareText(a.name, b.name))
       .map(item => ({
         ...item,
         countTone: item.count >= 5 ? 'large' : item.count >= 2 ? 'medium' : 'single'
@@ -186,7 +188,7 @@ const allMissing = computed(() =>
   <div class="sidebar">
     <!-- 同店判斷 -->
     <div class="summary-card" :class="`is-${summaryState}`">
-      <p class="summary-label">今天是否全數同店</p>
+      <p class="summary-label">{{ t('dashboard.summary.sameStoreLabel') }}</p>
       <p class="summary-main">
         <i v-if="summaryState === 'same'" class="fas fa-circle-check" aria-hidden="true"></i>
         {{ storeSummary.status }}
@@ -198,7 +200,7 @@ const allMissing = computed(() =>
     <div class="section">
       <div class="section-head">
         <i class="fas fa-clipboard-list section-icon" :class="{ muted: !hasMeals }" aria-hidden="true"></i>
-        <h3 class="section-title">店家餐點統整</h3>
+        <h3 class="section-title">{{ t('dashboard.summary.mealsTitle') }}</h3>
       </div>
 
       <template v-if="hasMeals">
@@ -208,11 +210,11 @@ const allMissing = computed(() =>
             <button
               type="button"
               class="confirm-meals-btn"
-              :aria-label="`逐項確認 ${group.storeName} 的餐點`"
+              :aria-label="t('dashboard.summary.confirmItemsAria', { store: group.storeName })"
               @click="openMealConfirmation(group)"
             >
               <i class="fas fa-list-check" aria-hidden="true"></i>
-              逐項確認
+              {{ t('dashboard.summary.confirmItems') }}
             </button>
           </div>
           <div class="meal-list">
@@ -229,7 +231,7 @@ const allMissing = computed(() =>
 
       <div v-else class="meal-empty">
         <i class="fas fa-clipboard" aria-hidden="true"></i>
-        <p>今天還沒有可統整的餐點</p>
+        <p>{{ t('dashboard.summary.noMeals') }}</p>
       </div>
     </div>
 
@@ -245,28 +247,28 @@ const allMissing = computed(() =>
             class="meal-confirm-dialog"
             role="dialog"
             aria-modal="true"
-            :aria-label="`${confirmingGroup.storeName} 餐點逐項確認`"
+            :aria-label="t('dashboard.summary.confirmDialogAria', { store: confirmingGroup.storeName })"
           >
             <div class="meal-confirm-head">
               <div class="meal-confirm-title-wrap">
                 <span class="meal-confirm-icon" aria-hidden="true"><i class="fas fa-list-check"></i></span>
                 <div>
                   <h3>{{ confirmingGroup.storeName }}</h3>
-                  <p>店家念到哪一項，就點一下劃掉</p>
+                  <p>{{ t('dashboard.summary.confirmHint') }}</p>
                 </div>
               </div>
               <button
                 ref="confirmationCloseButton"
                 type="button"
                 class="meal-confirm-close"
-                aria-label="關閉餐點確認視窗"
+                :aria-label="t('dashboard.summary.closeConfirm')"
                 @click="closeMealConfirmation"
               ><i class="fas fa-times" aria-hidden="true"></i></button>
             </div>
 
             <div class="meal-confirm-progress" role="status" aria-live="polite">
-              <span>確認進度</span>
-              <strong>{{ confirmedMealCount }} / {{ confirmingGroup.items.length }} 項</strong>
+              <span>{{ t('dashboard.summary.progress') }}</span>
+              <strong>{{ t('dashboard.summary.progressCount', { done: confirmedMealCount, total: confirmingGroup.items.length }) }}</strong>
             </div>
 
             <div class="meal-confirm-list">
@@ -292,7 +294,7 @@ const allMissing = computed(() =>
 
             <p class="meal-confirm-hint">
               <i class="fas fa-circle-info" aria-hidden="true"></i>
-              可再點一次復原；關閉視窗後，本次確認會重置。
+              {{ t('dashboard.summary.confirmFooter') }}
             </p>
           </div>
         </div>
@@ -303,14 +305,14 @@ const allMissing = computed(() =>
     <div class="section">
       <div class="section-head">
         <i class="fas fa-clock section-icon amber" aria-hidden="true"></i>
-        <h3 class="section-title">誰還沒下</h3>
+        <h3 class="section-title">{{ t('dashboard.summary.missingTitle') }}</h3>
         <span v-if="missingMembers.length" class="miss-badge">
-          {{ allMissing ? '全部 ' : '' }}{{ missingMembers.length }} 人
+          {{ t(allMissing ? 'dashboard.summary.allMissingCount' : 'dashboard.summary.missingCount', { count: missingMembers.length }) }}
         </span>
       </div>
 
-      <div v-if="!membersReady" class="no-data">成員名單載入中</div>
-      <div v-else-if="!members.length" class="no-data">尚未設定成員名單</div>
+      <div v-if="!membersReady" class="no-data">{{ t('dashboard.summary.membersLoading') }}</div>
+      <div v-else-if="!members.length" class="no-data">{{ t('dashboard.summary.noMembers') }}</div>
       <div v-else-if="missingMembers.length" class="member-list">
         <span v-for="name in missingMembers" :key="name" class="member-chip">
           <span class="member-avatar" aria-hidden="true">{{ (name || '?')[0] }}</span>
@@ -319,9 +321,9 @@ const allMissing = computed(() =>
       </div>
       <div v-else class="all-done">
         <p class="summary-main same-text">
-          <i class="fas fa-circle-check" aria-hidden="true"></i>全部都下了
+          <i class="fas fa-circle-check" aria-hidden="true"></i>{{ t('dashboard.summary.allDone') }}
         </p>
-        <p class="summary-detail">今天的成員名單都已完成點餐。</p>
+        <p class="summary-detail">{{ t('dashboard.summary.allDoneDetail') }}</p>
       </div>
     </div>
   </div>

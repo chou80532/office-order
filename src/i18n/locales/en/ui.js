@@ -1,0 +1,21 @@
+export default {
+  loading: 'Loading…',
+  processing: 'Working…',
+  closeToast: 'Dismiss notification',
+  offline: 'You are offline. Showing cached data.',
+  selectPlaceholder: 'Select',
+  selectEmpty: 'Nothing to choose from',
+  datePicker: {
+    pick: 'Choose a date',
+    previousYear: 'Previous year',
+    nextYear: 'Next year',
+    previousMonth: 'Previous month',
+    nextMonth: 'Next month',
+    time: 'Time',
+    hour: 'Hour',
+    minute: 'Minute',
+    thisMonth: 'This month',
+    today: 'Today',
+    apply: 'Apply',
+  },
+}

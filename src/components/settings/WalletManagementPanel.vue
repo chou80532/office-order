@@ -6,7 +6,6 @@ const rangeEndPicker = ref(null)
 import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { collection, getDocs, onSnapshot, orderBy, query, where } from 'firebase/firestore'
 import { db } from '../../firestore'
-import { LOW_WALLET_BALANCE, MAX_WALLET_TOP_UP } from '../../constants'
 import { useAuth } from '../../composables/useAuth'
 import { useFirestore } from '../../composables/useFirestore'
 import { useToast } from '../../composables/useToast'
@@ -16,29 +15,30 @@ import {
   addWalletCreditViaFunction,
   adjustWalletBalanceViaFunction,
 } from '../../services/walletFunctions'
-import { mergeEditLogPairs, matchesLogTypeFilter, editGroupShortId, composeLogDescription, MERGED_EDIT_TYPE } from '../../utils/walletLogs'
-import { getTaipeiDateRangeBounds, getTaipeiMonthRange, formatMoney, formatDateRange } from '../../utils/format'
+import { mergeEditLogPairs, matchesLogTypeFilter, editGroupShortId, composeLogDescription, MERGED_EDIT_TYPE, walletLogTypeLabel, WALLET_LOG_TYPES } from '../../utils/walletLogs'
+import { compareText, excelMoneyFormat, formatAmount, fromMinorUnits, getAppTimeZone, getFormatLocale, getTaipeiDateRangeBounds, getTaipeiMonthRange, formatMoney, formatDateRange, moneyInputStep, parseMoneyInput } from '../../utils/format'
 import { getAvatarColor } from '../../utils'
+import { t } from '../../i18n'
 
-const typeLabels = {
-  all: '全部',
-  top_up: '儲值',
-  order_debit: '點餐扣款',
-  cancel_refund: '取消退款',
-  free_refund: '免費退款',
-  free_debit: '取消免費扣回',
-  free_order: '今日店家免費',
-  admin_adjustment: '管理員修正',
-  order_edit: '訂單編輯調整',
-  order_edit_refund: '訂單編輯退款',
-  order_edit_debit: '訂單編輯扣款',
+const ALL = '__all__'
+const typeLabel = type => (type === 'all' ? t('wallet.allTypes') : walletLogTypeLabel(type))
+// 篩選下拉只列合併後的「訂單編輯調整」，原始退款/扣款兩個子類型不列。
+const typeFilterOptions = computed(() => Object.fromEntries(['all', ...WALLET_LOG_TYPES.filter(type => type !== 'order_edit_refund' && type !== 'order_edit_debit')]
+  .map(type => [type, typeLabel(type)])))
+
+const { membersWithUid, requireMemberData, releaseMemberData, systemSettings } = useFirestore()
+const maxTopUp = computed(() => systemSettings.value?.limits?.maxTopUp || 10_000)
+const lowBalance = computed(() => systemSettings.value?.limits?.lowBalance ?? 100)
+// 快速金額：儲值上限的 1%、5%、10%，取整到 1／2／5 開頭的整數（新台幣預設為 100／500／1000）。
+const niceAmount = (value) => {
+  if (value <= 0) return 0
+  const magnitude = 10 ** Math.floor(Math.log10(value))
+  const step = [1, 2, 5, 10].find(candidate => candidate * magnitude >= value * 0.75) || 10
+  return step * magnitude
 }
-// 篩選下拉只列合併後的「訂單編輯調整」，隱藏原始退款/扣款兩個子類型。
-const typeFilterOptions = { ...typeLabels }
-delete typeFilterOptions.order_edit_refund
-delete typeFilterOptions.order_edit_debit
-
-const { membersWithUid, requireMemberData, releaseMemberData } = useFirestore()
+const quickAmounts = computed(() => [...new Set([0.01, 0.05, 0.1].map(ratio => niceAmount(maxTopUp.value * ratio)).filter(Boolean))])
+const largeTopUp = computed(() => niceAmount(maxTopUp.value * 0.3))
+const amountText = value => formatAmount(value).replace(/,/g, '')
 const { userDisplayName } = useAuth()
 const { showToast } = useToast()
 
@@ -64,7 +64,7 @@ onActivated(() => syncMemberDataRequest(true))
 onDeactivated(() => syncMemberDataRequest(false))
 onUnmounted(() => syncMemberDataRequest(false))
 
-const topUpForm = reactive({ amount: '', reason: '現金儲值' })
+const topUpForm = reactive({ amount: '', reason: t('walletAdmin.defaultTopUpReason') })
 const adjustForm = reactive({ amount: '', reason: '' })
 // 儲值／修正改成點成員卡片開視窗操作，員工由卡片決定，不再用下拉選單
 const actionMember = ref(null)
@@ -74,7 +74,7 @@ const topUpAmountInput = ref(null)
 function openMemberActions(row) {
   actionMember.value = { uid: row.uid, name: row.name }
   topUpForm.amount = ''
-  topUpForm.reason = '現金儲值'
+  topUpForm.reason = t('walletAdmin.defaultTopUpReason')
   adjustForm.amount = ''
   adjustForm.reason = ''
   nextTick(() => topUpAmountInput.value?.focus())
@@ -99,7 +99,7 @@ const defaultReportRange = getTaipeiMonthRange()
 const report = reactive({
   from: defaultReportRange.from,
   to: defaultReportRange.to,
-  member: '全部',
+  member: ALL,
   type: 'all',
 })
 const registeredMembers = computed(() => membersWithUid.value.filter(member => member.uid))
@@ -120,7 +120,7 @@ const balanceRows = computed(() => registeredMembers.value.map((member) => {
     balance: Number(wallet?.balance) || 0,
     updatedAt: wallet?.updatedAt || wallet?.lastUpdated || wallet?.createdAt || null,
   }
-}).sort((a, b) => a.balance - b.balance || a.name.localeCompare(b.name, 'zh-Hant')))
+}).sort((a, b) => a.balance - b.balance || compareText(a.name, b.name)))
 
 const totalWalletBalance = computed(() =>
   balanceRows.value.reduce((total, row) => total + row.balance, 0)
@@ -133,7 +133,7 @@ const actionMemberBalance = computed(() =>
 
 // 原始（未合併）流水，供匯出逐筆稽核使用。
 const rawFilteredLogs = computed(() => logs.value.filter(log => {
-  if (report.member !== '全部' && log.ownerName !== report.member) return false
+  if (report.member !== ALL && log.ownerName !== report.member) return false
   return matchesLogTypeFilter(log, report.type)
 }))
 
@@ -156,7 +156,7 @@ const summary = computed(() => filteredLogs.value.reduce((acc, log) => {
 
 function formatSigned(value) {
   const num = Number(value) || 0
-  return `${num > 0 ? '+' : ''}${num.toLocaleString()}`
+  return `${num > 0 ? '+' : ''}${formatAmount(num)}`
 }
 
 // 只有「訂單編輯調整」需要展開明細看退款/扣款兩筆；其餘直接在說明欄呈現。
@@ -170,8 +170,8 @@ function hasEditDetail(log) {
   return log.type === MERGED_EDIT_TYPE && Array.isArray(log.pairLogs) && log.pairLogs.length > 0
 }
 function logDescription(log) {
-  if (log.type === MERGED_EDIT_TYPE) return String(log.reason || '').trim() || '訂單編輯調整'
-  return composeLogDescription(log, typeLabels[log.type] || log.type)
+  if (log.type === MERGED_EDIT_TYPE) return String(log.reason || '').trim() || typeLabel(MERGED_EDIT_TYPE)
+  return composeLogDescription(log, typeLabel(log.type))
 }
 
 function getTimestampMillis(ts) {
@@ -186,52 +186,55 @@ function getTimestampMillis(ts) {
 function formatDateTime(ts) {
   const millis = getTimestampMillis(ts)
   if (!millis) return '—'
-  return new Date(millis).toLocaleString('zh-TW')
+  return new Date(millis).toLocaleString(getFormatLocale(), { timeZone: getAppTimeZone(), hour12: false })
 }
 
 function itemSummary(log) {
   if (!Array.isArray(log.items) || log.items.length === 0) return ''
   return log.items
-    .map(item => `${item.meal || ''} ${Number(item.price || 0) ? `$${item.price}` : ''}${item.note ? `（${item.note}）` : ''}`.trim())
+    .map((item) => {
+      const meal = String(item.meal || '').trim()
+      const label = item.note ? t('data.mealWithNote', { meal, note: item.note }) : meal
+      return `${label} ${Number(item.price || 0) ? formatMoney(item.price) : ''}`.trim()
+    })
     .filter(Boolean)
-    .join('；')
+    .join(t('data.itemSeparator'))
 }
 
+// 輸入框裡是主單位（美元可有小數），送出前用 parseMoneyInput 換回最小單位。
 function normalizeTopUpAmount() {
   if (topUpForm.amount === '') return
-  const amount = Number(topUpForm.amount)
-  if (!Number.isFinite(amount)) {
-    topUpForm.amount = ''
-    return
-  }
-  topUpForm.amount = Math.min(MAX_WALLET_TOP_UP, Math.max(0, Math.trunc(amount)))
+  const amount = parseMoneyInput(topUpForm.amount)
+  if (!Number.isFinite(amount)) return
+  if (amount > maxTopUp.value) topUpForm.amount = amountText(maxTopUp.value)
+  else if (amount < 0) topUpForm.amount = ''
 }
 
 function addTopUpAmount(increment) {
-  const current = Number(topUpForm.amount)
+  const current = parseMoneyInput(topUpForm.amount)
   const safeCurrent = Number.isFinite(current) && current > 0 ? current : 0
-  topUpForm.amount = Math.min(MAX_WALLET_TOP_UP, safeCurrent + increment)
+  topUpForm.amount = amountText(Math.min(maxTopUp.value, safeCurrent + increment))
 }
 
 function addAdjustAmount(increment) {
-  const current = Number(adjustForm.amount)
+  const current = parseMoneyInput(adjustForm.amount)
   const safeCurrent = Number.isFinite(current) ? current : 0
-  adjustForm.amount = safeCurrent + increment
+  adjustForm.amount = amountText(safeCurrent + increment)
 }
 
 async function submitTopUp() {
   const member = actionMember.value
   if (!member || submitting.value) return
-  const amount = Number(topUpForm.amount)
-  if (!Number.isInteger(amount) || amount <= 0) { showToast('請輸入正確儲值金額', 'error'); return }
-  if (amount > MAX_WALLET_TOP_UP) { showToast(`單次儲值上限為 ${formatMoney(MAX_WALLET_TOP_UP)}`, 'error'); return }
-  // 視窗本身已是一次確認，只有大額儲值再多問一次
-  if (amount >= 3000) {
+  const amount = parseMoneyInput(topUpForm.amount)
+  if (!Number.isInteger(amount) || amount <= 0) { showToast(t('walletAdmin.invalidTopUp'), 'error'); return }
+  if (amount > maxTopUp.value) { showToast(t('walletAdmin.topUpLimit', { amount: formatMoney(maxTopUp.value) }), 'error'); return }
+  // 視窗本身已是一次確認，只有大額儲值（上限的三成以上）再多問一次
+  if (amount >= largeTopUp.value) {
     const confirmed = await confirmDialog({
-      title: '確認儲值？',
-      message: `確認要幫「${member.name}」儲值 ${formatMoney(amount)}？`,
-      detail: '此為大額儲值，請再次確認金額無誤。',
-      confirmText: '確認儲值',
+      title: t('walletAdmin.largeTopUpTitle'),
+      message: t('walletAdmin.largeTopUpMessage', { name: member.name, amount: formatMoney(amount) }),
+      detail: t('walletAdmin.largeTopUpDetail'),
+      confirmText: t('walletAdmin.confirmTopUp'),
     })
     if (!confirmed) return
   }
@@ -243,13 +246,13 @@ async function submitTopUp() {
       ownerName: member.name,
       amount,
       actorName: userDisplayName.value,
-      reason: topUpForm.reason || '現金儲值',
+      reason: topUpForm.reason || t('walletAdmin.defaultTopUpReason'),
     })
-    showToast(`已為 ${member.name} 儲值 ${formatMoney(amount)}`, 'success')
+    showToast(t('walletAdmin.toppedUp', { name: member.name, amount: formatMoney(amount) }), 'success')
     submitting.value = false
     closeMemberActions()
   } catch {
-    showToast('儲值失敗', 'error')
+    showToast(t('walletAdmin.topUpFailed'), 'error')
     submitting.value = false
   }
 }
@@ -257,14 +260,14 @@ async function submitTopUp() {
 async function submitAdjustment() {
   const member = actionMember.value
   if (!member || submitting.value) return
-  const amount = Number(adjustForm.amount)
-  if (!Number.isInteger(amount) || amount === 0) { showToast('請輸入修正金額，可為正數或負數', 'error'); return }
-  if (!adjustForm.reason.trim()) { showToast('修正原因必填', 'error'); return }
+  const amount = parseMoneyInput(adjustForm.amount)
+  if (!Number.isInteger(amount) || amount === 0) { showToast(t('walletAdmin.invalidAdjust'), 'error'); return }
+  if (!adjustForm.reason.trim()) { showToast(t('walletAdmin.reasonRequired'), 'error'); return }
   const confirmed = await confirmDialog({
-    title: '確認餘額修正？',
-    message: `確認修正「${member.name}」${formatMoney(amount)}？`,
-    detail: `原因：${adjustForm.reason}`,
-    confirmText: '確認修正',
+    title: t('walletAdmin.adjustTitle'),
+    message: t('walletAdmin.adjustMessage', { name: member.name, amount: formatMoney(amount) }),
+    detail: t('walletAdmin.adjustDetail', { reason: adjustForm.reason }),
+    confirmText: t('walletAdmin.confirmAdjust'),
     variant: 'danger',
   })
   if (!confirmed) return
@@ -278,11 +281,11 @@ async function submitAdjustment() {
       actorName: userDisplayName.value,
       reason: adjustForm.reason.trim(),
     })
-    showToast(`已修正 ${member.name} NT$ ${formatSigned(amount)}`, 'success')
+    showToast(t('walletAdmin.adjusted', { name: member.name, amount: `${amount > 0 ? '+' : ''}${formatMoney(amount)}` }), 'success')
     submitting.value = false
     closeMemberActions()
   } catch {
-    showToast('修正失敗', 'error')
+    showToast(t('walletAdmin.adjustFailed'), 'error')
     submitting.value = false
   }
 }
@@ -293,42 +296,46 @@ async function exportExcel() {
   try {
     const { downloadXlsx } = await import('../../utils/xlsxExport')
     await downloadXlsx({
-      filename: `錢包大帳_${report.from}_${report.to}.xlsx`,
+      filename: t('walletAdmin.export.fileName', { from: report.from, to: report.to }),
       sheets: [{
-        name: '錢包流水',
-        title: '錢包大帳報表',
-        subtitle: `${formatDateRange(report.from, report.to)}｜員工：${report.member}｜類型：${typeFilterOptions[report.type] || report.type}`,
+        name: t('walletAdmin.export.sheetName'),
+        title: t('walletAdmin.export.title'),
+        subtitle: t('walletAdmin.export.subtitle', {
+          range: formatDateRange(report.from, report.to),
+          member: report.member === ALL ? t('walletAdmin.allMembers') : report.member,
+          type: typeFilterOptions.value[report.type] || report.type,
+        }),
         summary: [
-          { label: '區間儲值', value: summary.value.topUp },
-          { label: '區間扣款', value: summary.value.debit },
-          { label: '區間退款', value: summary.value.refund },
-          { label: '編輯調整淨額', value: summary.value.edit },
-          { label: '區間修正淨額', value: summary.value.adjust },
-          { label: '區間淨額', value: summary.value.net },
+          { label: t('walletAdmin.export.topUp'), value: fromMinorUnits(summary.value.topUp) },
+          { label: t('walletAdmin.export.debit'), value: fromMinorUnits(summary.value.debit) },
+          { label: t('walletAdmin.export.refund'), value: fromMinorUnits(summary.value.refund) },
+          { label: t('walletAdmin.export.edit'), value: fromMinorUnits(summary.value.edit) },
+          { label: t('walletAdmin.export.adjust'), value: fromMinorUnits(summary.value.adjust) },
+          { label: t('walletAdmin.export.net'), value: fromMinorUnits(summary.value.net) },
         ],
         columns: [
-          { header: '時間', key: 'timestamp', width: 21, numFmt: 'yyyy/mm/dd hh:mm:ss' },
-          { header: '員工', key: 'ownerName', width: 14 },
-          { header: '類型', key: 'type', width: 16 },
-          { header: '編輯群組', key: 'editGroup', width: 12 },
-          { header: '金額', key: 'amount', width: 14, numFmt: '#,##0;[Red]-#,##0;0' },
-          { header: '變更前', key: 'beforeBalance', width: 14, numFmt: '#,##0' },
-          { header: '變更後', key: 'afterBalance', width: 14, numFmt: '#,##0' },
-          { header: '操作者', key: 'operatorName', width: 14 },
-          { header: '原因', key: 'reason', width: 36, wrapText: true },
-          { header: '關聯訂單', key: 'orderIds', width: 24, wrapText: true },
-          { header: '店家', key: 'storeName', width: 20 },
-          { header: '品項明細', key: 'items', width: 40, wrapText: true },
+          { header: t('walletAdmin.export.time'), key: 'timestamp', width: 21, numFmt: 'yyyy/mm/dd hh:mm:ss' },
+          { header: t('walletAdmin.export.member'), key: 'ownerName', width: 14 },
+          { header: t('walletAdmin.export.type'), key: 'type', width: 16 },
+          { header: t('walletAdmin.export.editGroup'), key: 'editGroup', width: 12 },
+          { header: t('walletAdmin.export.amount'), key: 'amount', width: 14, numFmt: excelMoneyFormat() },
+          { header: t('walletAdmin.export.before'), key: 'beforeBalance', width: 14, numFmt: excelMoneyFormat({ signed: false }) },
+          { header: t('walletAdmin.export.after'), key: 'afterBalance', width: 14, numFmt: excelMoneyFormat({ signed: false }) },
+          { header: t('walletAdmin.export.operator'), key: 'operatorName', width: 14 },
+          { header: t('walletAdmin.export.reason'), key: 'reason', width: 36, wrapText: true },
+          { header: t('walletAdmin.export.orders'), key: 'orderIds', width: 24, wrapText: true },
+          { header: t('walletAdmin.export.store'), key: 'storeName', width: 20 },
+          { header: t('walletAdmin.export.items'), key: 'items', width: 40, wrapText: true },
         ],
         // 匯出保留原始退款／扣款兩列，以「編輯群組」欄標示同一次編輯，便於逐筆稽核。
         rows: rawFilteredLogs.value.map(log => ({
           timestamp: Number(log.timestamp) ? new Date(Number(log.timestamp)) : '',
           ownerName: log.ownerName || '',
-          type: typeLabels[log.type] || log.type,
+          type: typeLabel(log.type),
           editGroup: editGroupShortId(log),
-          amount: Number(log.amount) || 0,
-          beforeBalance: Number(log.beforeBalance) || 0,
-          afterBalance: Number(log.afterBalance) || 0,
+          amount: fromMinorUnits(log.amount),
+          beforeBalance: fromMinorUnits(log.beforeBalance),
+          afterBalance: fromMinorUnits(log.afterBalance),
           operatorName: log.operatorName || '',
           reason: log.reason || '',
           orderIds: log.orderId || (log.orderIds || []).join(', '),
@@ -338,10 +345,10 @@ async function exportExcel() {
         signedAmountKey: 'amount',
       }],
     })
-    showToast('錢包 XLSX 已匯出', 'success')
+    showToast(t('walletAdmin.export.done'), 'success')
   } catch (error) {
     console.error(error)
-    showToast('錢包 XLSX 匯出失敗', 'error')
+    showToast(t('walletAdmin.export.failed'), 'error')
   } finally {
     exporting.value = false
   }
@@ -367,7 +374,7 @@ async function loadWalletLogs() {
     if (request !== walletLogRequest) return
     logs.value = []
     console.error('[Firestore] wallet logs query error:', error)
-    showToast('讀取大帳條失敗，請稍後再試', 'error')
+    showToast(t('walletAdmin.logsFailed'), 'error')
   } finally {
     if (request === walletLogRequest) {
       loading.value = false
@@ -393,18 +400,18 @@ onUnmounted(() => {
 <template>
   <div class="wallet-admin ops-surface">
     <!-- KPI 卡列（設計稿 4：總儲值餘額綠漸層／區間儲值／區間扣款） -->
-    <section class="wallet-kpis summary-strip summary-three summary-success" aria-label="錢包總覽">
+    <section class="wallet-kpis summary-strip summary-three summary-success" :aria-label="t('walletAdmin.overviewAria')">
       <div class="wkpi wkpi-total summary-cell is-primary">
-        <span class="wkpi-label"><i class="fas fa-wallet" aria-hidden="true"></i>總儲值餘額</span>
+        <span class="wkpi-label"><i class="fas fa-wallet" aria-hidden="true"></i>{{ t('walletAdmin.totalBalance') }}</span>
         <strong class="wkpi-value summary-money">{{ formatMoney(totalWalletBalance) }}</strong>
       </div>
       <div class="wkpi summary-cell">
-        <span class="wkpi-label">區間儲值</span>
+        <span class="wkpi-label">{{ t('walletAdmin.periodTopUp') }}</span>
         <strong class="wkpi-value">{{ formatMoney(summary.topUp) }}</strong>
         <small class="wkpi-sub">{{ formatDateRange(report.from, report.to) }}</small>
       </div>
       <div class="wkpi summary-cell">
-        <span class="wkpi-label">區間扣款</span>
+        <span class="wkpi-label">{{ t('walletAdmin.periodDebit') }}</span>
         <strong class="wkpi-value">{{ formatMoney(summary.debit) }}</strong>
         <small class="wkpi-sub">{{ formatDateRange(report.from, report.to) }}</small>
       </div>
@@ -413,20 +420,20 @@ onUnmounted(() => {
     <section class="panel balance-panel">
       <div class="report-head">
         <div>
-          <h2>成員餘額</h2>
-          <p>目前各員工錢包餘額，點成員列或「儲值」即可開啟儲值 / 修正視窗。</p>
+          <h2>{{ t('walletAdmin.balancesTitle') }}</h2>
+          <p>{{ t('walletAdmin.balancesDesc') }}</p>
         </div>
-        <span class="count-chip">{{ balanceRows.length }} 位</span>
+        <span class="count-chip">{{ t('walletAdmin.memberCount', { count: balanceRows.length }) }}</span>
       </div>
       <div class="member-grid">
         <article
           v-for="row in balanceRows"
           :key="row.uid"
           class="member-card"
-          :class="{ low: row.balance < LOW_WALLET_BALANCE }"
+          :class="{ low: row.balance < lowBalance }"
           role="button"
           tabindex="0"
-          :aria-label="`${row.name} 儲值或修正`"
+          :aria-label="t('walletAdmin.memberCardAria', { name: row.name })"
           @click="openMemberActions(row)"
           @keydown.enter.prevent="openMemberActions(row)"
           @keydown.space.prevent="openMemberActions(row)"
@@ -434,14 +441,14 @@ onUnmounted(() => {
           <div class="member-card-head">
             <span class="bc-avatar" :style="{ background: getAvatarColor(row.name) }" aria-hidden="true">{{ row.name.slice(0, 1) }}</span>
             <span class="balance-name" :title="row.name">{{ row.name }}</span>
-            <button type="button" class="row-topup-btn" @click.stop="openMemberActions(row)">儲值</button>
+            <button type="button" class="row-topup-btn" @click.stop="openMemberActions(row)">{{ t('walletAdmin.topUp') }}</button>
           </div>
-          <span class="member-balance" :class="{ low: row.balance < LOW_WALLET_BALANCE, minus: row.balance < 0 }">
-            <i v-if="row.balance < LOW_WALLET_BALANCE" class="fas fa-circle-exclamation" aria-hidden="true" title="餘額偏低"></i>
+          <span class="member-balance" :class="{ low: row.balance < lowBalance, minus: row.balance < 0 }">
+            <i v-if="row.balance < lowBalance" class="fas fa-circle-exclamation" aria-hidden="true" :title="t('walletAdmin.lowBalance')"></i>
             {{ formatMoney(row.balance) }}
           </span>
         </article>
-        <div v-if="balanceRows.length === 0" class="empty balance-empty">尚無已註冊員工</div>
+        <div v-if="balanceRows.length === 0" class="empty balance-empty">{{ t('walletAdmin.noMembers') }}</div>
       </div>
     </section>
 
@@ -449,65 +456,65 @@ onUnmounted(() => {
     <Teleport to="body">
       <Transition name="wallet-modal">
         <div v-if="actionMember" class="wallet-modal-overlay" @click.self="closeMemberActions">
-          <div class="wallet-modal" role="dialog" aria-modal="true" :aria-label="`${actionMember.name} 錢包操作`">
+          <div class="wallet-modal" role="dialog" aria-modal="true" :aria-label="t('walletAdmin.dialogAria', { name: actionMember.name })">
             <div class="wm-head">
               <span class="bc-avatar" :style="{ background: getAvatarColor(actionMember.name) }" aria-hidden="true">{{ actionMember.name.slice(0, 1) }}</span>
               <div class="wm-head-text">
                 <h3>{{ actionMember.name }}</h3>
-                <p>目前餘額 <strong>{{ formatMoney(actionMemberBalance) }}</strong></p>
+                <p>{{ t('walletAdmin.currentBalance') }} <strong>{{ formatMoney(actionMemberBalance) }}</strong></p>
               </div>
-              <button type="button" class="wm-close" aria-label="關閉" @click="closeMemberActions"><i class="fas fa-times" aria-hidden="true"></i></button>
+              <button type="button" class="wm-close" :aria-label="t('common.close')" @click="closeMemberActions"><i class="fas fa-times" aria-hidden="true"></i></button>
             </div>
 
             <div class="wm-body">
               <form class="wm-col top-up" @submit.prevent="submitTopUp">
-                <h4>儲值</h4>
+                <h4>{{ t('walletAdmin.topUp') }}</h4>
                 <label class="field">
-                  <span>儲值金額（上限 {{ formatMoney(MAX_WALLET_TOP_UP) }}）</span>
+                  <span>{{ t('walletAdmin.topUpAmount', { amount: formatMoney(maxTopUp) }) }}</span>
                   <input
                     ref="topUpAmountInput"
                     v-model="topUpForm.amount"
                     type="number"
-                    min="1"
-                    :max="MAX_WALLET_TOP_UP"
-                    step="1"
-                    placeholder="例如 500"
+                    :min="moneyInputStep()"
+                    :max="fromMinorUnits(maxTopUp)"
+                    :step="moneyInputStep()"
+                    :placeholder="t('walletAdmin.topUpPlaceholder', { amount: amountText(quickAmounts[1] || quickAmounts[0] || 0) })"
                     @input="normalizeTopUpAmount"
                   />
                 </label>
-                <div class="quick-amounts" aria-label="快速增加儲值金額">
-                  <button v-for="amount in [100, 500, 1000]" :key="amount" type="button" @click="addTopUpAmount(amount)">
+                <div class="quick-amounts" :aria-label="t('walletAdmin.quickTopUpAria')">
+                  <button v-for="amount in quickAmounts" :key="amount" type="button" @click="addTopUpAmount(amount)">
                     +{{ formatMoney(amount) }}
                   </button>
                 </div>
                 <label class="field">
-                  <span>原因 / 備註</span>
-                  <input v-model="topUpForm.reason" maxlength="60" placeholder="現金儲值" />
+                  <span>{{ t('walletAdmin.reasonNote') }}</span>
+                  <input v-model="topUpForm.reason" maxlength="60" :placeholder="t('walletAdmin.defaultTopUpReason')" />
                 </label>
                 <div class="wm-actions">
-                  <button type="button" class="cancel-btn" :disabled="submitting" @click="closeMemberActions">取消</button>
-                  <button type="submit" class="primary-btn" :disabled="submitting">確認儲值</button>
+                  <button type="button" class="cancel-btn" :disabled="submitting" @click="closeMemberActions">{{ t('common.cancel') }}</button>
+                  <button type="submit" class="primary-btn" :disabled="submitting">{{ t('walletAdmin.confirmTopUp') }}</button>
                 </div>
               </form>
 
               <form class="wm-col adjust" @submit.prevent="submitAdjustment">
-                <h4>修正 / 扣回</h4>
+                <h4>{{ t('walletAdmin.adjustHeading') }}</h4>
                 <label class="field">
-                  <span>修正金額（可為負數）</span>
-                  <input v-model="adjustForm.amount" type="number" step="1" placeholder="-4500 或 100" />
+                  <span>{{ t('walletAdmin.adjustAmount') }}</span>
+                  <input v-model="adjustForm.amount" type="number" :step="moneyInputStep()" :placeholder="t('walletAdmin.adjustPlaceholder', { big: amountText(largeTopUp), small: amountText(quickAmounts[0] || 0) })" />
                 </label>
-                <div class="quick-amounts adjustment-amounts" aria-label="快速扣回修正金額">
-                  <button v-for="amount in [100, 500, 1000]" :key="amount" type="button" @click="addAdjustAmount(-amount)">
+                <div class="quick-amounts adjustment-amounts" :aria-label="t('walletAdmin.quickAdjustAria')">
+                  <button v-for="amount in quickAmounts" :key="amount" type="button" @click="addAdjustAmount(-amount)">
                     -{{ formatMoney(amount) }}
                   </button>
                 </div>
                 <label class="field">
-                  <span>修正原因（必填，寫入 Log）</span>
-                  <input v-model="adjustForm.reason" maxlength="80" placeholder="例如：儲值誤打 5000，扣回 4500" />
+                  <span>{{ t('walletAdmin.adjustReason') }}</span>
+                  <input v-model="adjustForm.reason" maxlength="80" :placeholder="t('walletAdmin.adjustReasonPlaceholder')" />
                 </label>
                 <div class="wm-actions">
-                  <button type="button" class="cancel-btn" :disabled="submitting" @click="closeMemberActions">取消</button>
-                  <button type="submit" class="danger-btn" :disabled="submitting">確認修正</button>
+                  <button type="button" class="cancel-btn" :disabled="submitting" @click="closeMemberActions">{{ t('common.cancel') }}</button>
+                  <button type="submit" class="danger-btn" :disabled="submitting">{{ t('walletAdmin.confirmAdjust') }}</button>
                 </div>
               </form>
             </div>
@@ -519,43 +526,43 @@ onUnmounted(() => {
     <section class="panel">
       <div class="report-head">
         <div>
-          <h2>總務大帳條</h2>
-          <p>區間彙總與下方明細會一起依日期、員工與交易類型篩選，可匯出 Excel 對帳。</p>
+          <h2>{{ t('walletAdmin.ledgerTitle') }}</h2>
+          <p>{{ t('walletAdmin.ledgerDesc') }}</p>
         </div>
         <div class="head-actions">
-          <span class="count-chip">{{ filteredLogs.length }} 筆</span>
+          <span class="count-chip">{{ t('walletAdmin.logCount', { count: filteredLogs.length }) }}</span>
           <button class="export-btn" :disabled="exporting" @click="exportExcel">
-            {{ exporting ? '匯出中…' : '匯出 XLSX' }}
+            {{ exporting ? t('wallet.exporting') : t('wallet.exportXlsx') }}
           </button>
         </div>
       </div>
 
       <div class="filters">
-        <AppDatePicker v-model="report.from" @change="rangeEndPicker?.openPicker()" :max="report.to" aria-label="錢包報表開始日期" />
-        <AppDatePicker ref="rangeEndPicker" v-model="report.to" :min="report.from" aria-label="錢包報表結束日期" />
-        <select v-model="report.member">
-          <option value="全部">全部員工</option>
+        <AppDatePicker v-model="report.from" @change="rangeEndPicker?.openPicker()" :max="report.to" :aria-label="t('walletAdmin.startAria')" />
+        <AppDatePicker ref="rangeEndPicker" v-model="report.to" :min="report.from" :aria-label="t('walletAdmin.endAria')" />
+        <select v-model="report.member" :aria-label="t('walletAdmin.memberFilterAria')">
+          <option :value="ALL">{{ t('walletAdmin.allMembers') }}</option>
           <option v-for="member in registeredMembers" :key="member.uid" :value="member.name">{{ member.name }}</option>
         </select>
-        <select v-model="report.type">
+        <select v-model="report.type" :aria-label="t('walletAdmin.typeFilterAria')">
           <option v-for="(label, type) in typeFilterOptions" :key="type" :value="type">{{ label }}</option>
         </select>
         <button class="query-btn" :disabled="logsLoading" @click="loadWalletLogs">
-          {{ logsLoading ? '更新中…' : '重新整理' }}
+          {{ logsLoading ? t('walletAdmin.refreshing') : t('walletAdmin.refresh') }}
         </button>
       </div>
 
-      <div class="summary-panel" aria-label="錢包區間彙總">
+      <div class="summary-panel" :aria-label="t('walletAdmin.summaryAria')">
         <div class="summary-row">
-          <div class="metric top-up"><span>區間儲值</span><strong>{{ formatMoney(summary.topUp) }}</strong></div>
-          <div class="metric debit"><span>區間扣款</span><strong>{{ formatMoney(summary.debit) }}</strong></div>
-          <div class="metric net"><span>區間淨額</span><strong>{{ formatMoney(summary.net) }}</strong></div>
+          <div class="metric top-up"><span>{{ t('walletAdmin.periodTopUp') }}</span><strong>{{ formatMoney(summary.topUp) }}</strong></div>
+          <div class="metric debit"><span>{{ t('walletAdmin.periodDebit') }}</span><strong>{{ formatMoney(summary.debit) }}</strong></div>
+          <div class="metric net"><span>{{ t('walletAdmin.periodNet') }}</span><strong>{{ formatMoney(summary.net) }}</strong></div>
         </div>
         <!-- 退款／編輯調整／修正很少發生，僅在非 0 時以附註顯示（XLSX 匯出仍含完整六項） -->
         <p v-if="summary.refund || summary.edit || summary.adjust" class="summary-minor">
-          <span v-if="summary.refund">區間退款 {{ formatMoney(summary.refund) }}</span>
-          <span v-if="summary.edit">編輯調整淨額 {{ formatMoney(summary.edit) }}</span>
-          <span v-if="summary.adjust">修正淨額 {{ formatMoney(summary.adjust) }}</span>
+          <span v-if="summary.refund">{{ t('walletAdmin.periodRefundAmount', { amount: formatMoney(summary.refund) }) }}</span>
+          <span v-if="summary.edit">{{ t('walletAdmin.editNetAmount', { amount: formatMoney(summary.edit) }) }}</span>
+          <span v-if="summary.adjust">{{ t('walletAdmin.adjustNetAmount', { amount: formatMoney(summary.adjust) }) }}</span>
         </p>
       </div>
 
@@ -563,22 +570,22 @@ onUnmounted(() => {
         <table>
           <thead>
             <tr>
-              <th>時間</th>
-              <th>員工</th>
-              <th>說明</th>
-              <th class="right">金額</th>
-              <th class="right">變更前</th>
-              <th class="right">變更後</th>
-              <th>操作者</th>
-              <th class="detail-col" aria-label="明細"></th>
+              <th>{{ t('walletAdmin.export.time') }}</th>
+              <th>{{ t('walletAdmin.export.member') }}</th>
+              <th>{{ t('wallet.description') }}</th>
+              <th class="right">{{ t('walletAdmin.export.amount') }}</th>
+              <th class="right">{{ t('walletAdmin.export.before') }}</th>
+              <th class="right">{{ t('walletAdmin.export.after') }}</th>
+              <th>{{ t('walletAdmin.export.operator') }}</th>
+              <th class="detail-col" :aria-label="t('wallet.detail')"></th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="8"><LoadingState title="正在載入交易紀錄…" description="正在整理所選區間的錢包流水，請稍候。" /></td>
+              <td colspan="8"><LoadingState :title="t('walletAdmin.loadingTitle')" :description="t('walletAdmin.loadingText')" /></td>
             </tr>
             <tr v-else-if="filteredLogs.length === 0">
-              <td colspan="8"><StatusNotice title="沒有符合條件的交易紀錄" description="請調整日期、員工或交易類型。" /></td>
+              <td colspan="8"><StatusNotice :title="t('walletAdmin.emptyTitle')" :description="t('walletAdmin.emptyText')" /></td>
             </tr>
             <template v-for="log in filteredLogs" :key="log.id">
               <tr
@@ -597,14 +604,14 @@ onUnmounted(() => {
                 <td>{{ log.operatorName || '—' }}</td>
                 <td class="detail-col">
                   <button v-if="hasEditDetail(log)" type="button" class="detail-toggle">
-                    {{ expandedIds.includes(log.id) ? '收合' : '明細' }}
+                    {{ expandedIds.includes(log.id) ? t('wallet.collapse') : t('wallet.detail') }}
                   </button>
                 </td>
               </tr>
               <template v-if="hasEditDetail(log) && expandedIds.includes(log.id)">
                 <tr v-for="pair in log.pairLogs" :key="pair.id" class="edit-sub-tr">
                   <td></td>
-                  <td class="edit-sub-label">{{ typeLabels[pair.type] || pair.type }}</td>
+                  <td class="edit-sub-label">{{ typeLabel(pair.type) }}</td>
                   <td class="edit-sub-meal reason-cell">{{ pair.items && pair.items[0] ? pair.items[0].meal : '' }}<template v-if="pair.items && pair.items[0] && pair.items[0].note">・{{ pair.items[0].note }}</template></td>
                   <td class="right mono" :class="{ plus: Number(pair.amount) > 0, minus: Number(pair.amount) < 0 }">{{ formatSigned(pair.amount) }}</td>
                   <td class="right mono">{{ formatMoney(pair.beforeBalance) }}</td>
@@ -614,7 +621,7 @@ onUnmounted(() => {
                 </tr>
                 <tr :key="`${log.id}-net`" class="edit-sub-tr net">
                   <td></td>
-                  <td class="edit-sub-label">淨額</td>
+                  <td class="edit-sub-label">{{ t('wallet.net') }}</td>
                   <td></td>
                   <td class="right mono" :class="{ plus: Number(log.amount) > 0, minus: Number(log.amount) < 0 }">{{ formatSigned(log.amount) }}</td>
                   <td class="right mono">{{ formatMoney(log.beforeBalance) }}</td>

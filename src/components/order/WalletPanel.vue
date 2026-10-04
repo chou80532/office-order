@@ -8,36 +8,24 @@ import { collection, doc, getDocs, onSnapshot, query, where } from 'firebase/fir
 import { db } from '../../firestore'
 import { useAuth } from '../../composables/useAuth'
 import { useToast } from '../../composables/useToast'
-import { LOW_WALLET_BALANCE } from '../../constants'
-import { getTaipeiDateRangeBounds, getTaipeiMonthRange, formatMoney } from '../../utils/format'
+import { useFirestore } from '../../composables/useFirestore'
+import { excelMoneyFormat, formatAmount as formatMinorAmount, fromMinorUnits, getAppCurrency, getAppTimeZone, getFormatLocale, getTaipeiDateRangeBounds, getTaipeiMonthRange, formatMoney } from '../../utils/format'
+import { t } from '../../i18n'
 import { periodBuckets } from '../../utils/periodBuckets'
 import { mealTone } from '../../utils/mealPresentation'
 import AppDatePicker from '../ui/AppDatePicker.vue'
 import { useToolbarTeleport } from '../../composables/useToolbarTeleport'
-import { mergeEditLogPairs, matchesLogTypeFilter, editGroupShortId, composeLogDescription, MERGED_EDIT_TYPE } from '../../utils/walletLogs'
+import { mergeEditLogPairs, matchesLogTypeFilter, editGroupShortId, composeLogDescription, MERGED_EDIT_TYPE, WALLET_LOG_TYPES, walletLogTypeLabel } from '../../utils/walletLogs'
 
 const props = defineProps({
   toolbarTarget: { type: String, default: '' }
 })
 const desktopToolbar = useToolbarTeleport(toRef(props, 'toolbarTarget'))
 
-const typeLabels = {
-  top_up: '儲值',
-  order_debit: '點餐扣款',
-  cancel_refund: '取消退款',
-  admin_adjustment: '管理員修正',
-  free_debit: '取消免費扣回',
-  free_refund: '免費訂單退款',
-  free_order: '今日店家免費',
-  order_edit: '訂單編輯調整',
-  order_edit_refund: '訂單編輯退款',
-  order_edit_debit: '訂單編輯扣款',
-  cash_adjustment: '現金調整',
-}
 // 篩選下拉只列合併後的「訂單編輯調整」，隱藏原始退款/扣款兩個子類型。
-const typeFilterOptions = { ...typeLabels }
-delete typeFilterOptions.order_edit_refund
-delete typeFilterOptions.order_edit_debit
+const FILTER_TYPES = WALLET_LOG_TYPES.filter(type => !['order_edit_refund', 'order_edit_debit'].includes(type))
+const { systemSettings } = useFirestore()
+const lowBalanceThreshold = computed(() => systemSettings?.value?.limits?.lowBalance ?? 100)
 
 const { userDisplayName, userUid } = useAuth()
 const { showToast } = useToast()
@@ -59,7 +47,7 @@ const filters = ref(defaultFilters())
 let stopWallet = null
 let logsRequestSeq = 0
 
-const typeOptions = computed(() => Object.entries(typeFilterOptions).map(([value, label]) => ({ value, label })))
+const typeOptions = computed(() => FILTER_TYPES.map(value => ({ value, label: walletLogTypeLabel(value) })))
 
 // 顯示前先把訂單編輯的退款/扣款配對合併成一列淨額。
 const mergedPeriodLogs = computed(() => mergeEditLogPairs(periodLogs.value))
@@ -177,7 +165,7 @@ const weeklySpending = computed(() => {
   return weeks.map((week) => ({
     ...week,
     amount: Math.max(0, Math.round(week.amount)),
-    label: new Date(week.start).toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei', month: '2-digit', day: '2-digit' }),
+    label: new Date(week.start).toLocaleDateString('zh-TW', { timeZone: getAppTimeZone(), month: '2-digit', day: '2-digit' }),
     heightPct: max > 0 ? Math.max(6, Math.round(week.amount / max * 100)) : 6,
     isPeak: max > 0 && week.amount === max,
   }))
@@ -215,7 +203,7 @@ const topDishes = computed(() => {
 const storeRanking = computed(() => {
   const totals = new Map()
   orderSpendingLogs.value.forEach(log => {
-    const name = String(log.storeName || '').trim() || '其他店家'
+    const name = String(log.storeName || '').trim() || t('wallet.otherStore')
     totals.set(name, (totals.get(name) || 0) + 1)
   })
   return [...totals.entries()]
@@ -227,13 +215,13 @@ const storeRanking = computed(() => {
 const maxStoreSpending = computed(() => storeRanking.value[0]?.amount || 1)
 
 const periodLabel = computed(() => {
-  if (!filters.value.from || !filters.value.to) return '所選期間'
+  if (!filters.value.from || !filters.value.to) return t('wallet.selectedPeriod')
   const format = value => value.replaceAll('-', '/')
   return `${format(filters.value.from)}－${format(filters.value.to)}`
 })
 
 const balance = computed(() => Number(wallet.value?.balance) || 0)
-const isLowBalance = computed(() => balance.value < LOW_WALLET_BALANCE)
+const isLowBalance = computed(() => lowBalanceThreshold.value > 0 && balance.value < lowBalanceThreshold.value)
 
 function resetFilters() {
   filters.value = defaultFilters()
@@ -263,7 +251,7 @@ async function loadWalletLogs() {
   } catch (error) {
     if (requestId !== logsRequestSeq) return
     console.error('[WalletPanel] wallet logs query failed:', error)
-    logsError.value = '交易紀錄暫時載入失敗，請稍後再試'
+    logsError.value = t('wallet.logsFailed')
   } finally {
     if (requestId === logsRequestSeq) logsLoading.value = false
   }
@@ -271,7 +259,8 @@ async function loadWalletLogs() {
 
 function formatTime(ts) {
   if (!ts) return '—'
-  return new Date(ts).toLocaleString('zh-TW', {
+  return new Date(ts).toLocaleString(getFormatLocale(), {
+    timeZone: getAppTimeZone(),
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -281,7 +270,7 @@ function formatTime(ts) {
 
 function formatAmount(amount) {
   const value = Number(amount) || 0
-  return `${value > 0 ? '+' : ''}${value.toLocaleString()}`
+  return `${value > 0 ? '+' : ''}${formatMinorAmount(value)}`
 }
 
 
@@ -292,25 +281,29 @@ function hasDetail(log) {
 
 // 說明欄文字：編輯列顯示「動作｜品項變化」，其餘顯示「動作｜店家｜品項」。
 function logDescription(log) {
-  if (log.type === MERGED_EDIT_TYPE) return String(log.reason || '').trim() || '訂單編輯調整'
-  return composeLogDescription(log, typeLabels[log.type] || log.type)
+  if (log.type === MERGED_EDIT_TYPE) return String(log.reason || '').trim() || t('wallet.types.order_edit')
+  return composeLogDescription(log, walletLogTypeLabel(log.type))
 }
 
 function logReason(log) {
   const reasonText = String(log.reason || '').trim()
   // 合併後的編輯列：直接顯示「品項 → 品項」的變更說明。
   if (log.type === MERGED_EDIT_TYPE) {
-    const prefix = '訂單編輯調整｜'
-    return reasonText.startsWith(prefix) ? reasonText.slice(prefix.length) : (reasonText || '訂單編輯調整')
+    // 說明文字可能是任一語言產生的，兩種前綴都拿掉。
+    const prefix = ['訂單編輯調整｜', 'Order edited – '].find(item => reasonText.startsWith(item))
+    return prefix ? reasonText.slice(prefix.length) : (reasonText || t('wallet.types.order_edit'))
   }
 
-  const countText = hasDetail(log) ? `${log.itemCount || log.items.length} 個品項` : ''
+  const countText = hasDetail(log) ? t('wallet.itemCount', { count: log.itemCount || log.items.length }) : ''
   if (!countText) return reasonText || '—'
 
   if (log.type === 'order_debit') {
-    const prefix = log.storeName ? `點餐扣款｜${log.storeName}` : '點餐扣款'
-    const proxyNote = reasonText.startsWith(prefix)
-      ? reasonText.slice(prefix.length).replace(/^｜/, '')
+    // 後端依系統語言寫入「點餐扣款｜店家｜由 X 代點」或「Order charge – store – ordered by X」，只留下代點說明。
+    const prefix = [['點餐扣款', '｜'], ['Order charge', ' – ']]
+      .map(([label, separator]) => (log.storeName ? `${label}${separator}${log.storeName}` : label))
+      .find(item => reasonText.startsWith(item))
+    const proxyNote = prefix
+      ? reasonText.slice(prefix.length).replace(/^(｜| – )/, '')
       : reasonText
     return proxyNote ? `${countText}・${proxyNote}` : countText
   }
@@ -321,7 +314,7 @@ function logReason(log) {
 function exportItemSummary(log) {
   if (!Array.isArray(log.items) || !log.items.length) return ''
   return log.items.map(item => {
-    const meal = String(item.meal || '').trim() || '未命名品項'
+    const meal = String(item.meal || '').trim() || t('wallet.unnamedItem')
     const note = String(item.note || '').trim()
     const price = Number(item.price) || 0
     return `${meal}${note ? `（${note}）` : ''} ${formatMoney(price)}`
@@ -340,53 +333,57 @@ async function exportStatement() {
     const lastLog = statementLogs.at(-1)
     const credits = statementLogs.reduce((sum, log) => sum + Math.max(0, Number(log.amount) || 0), 0)
     const debits = statementLogs.reduce((sum, log) => sum + Math.abs(Math.min(0, Number(log.amount) || 0)), 0)
-    const ownerName = String(userDisplayName.value || wallet.value?.ownerName || '個人').trim()
+    const ownerName = String(userDisplayName.value || wallet.value?.ownerName || t('wallet.personal')).trim()
     const safeOwnerName = ownerName.replace(/[\\/:*?"<>|]/g, '_')
     const { downloadXlsx } = await import('../../utils/xlsxExport')
 
     await downloadXlsx({
-      filename: `個人錢包對帳單_${safeOwnerName}_${filters.value.from}_${filters.value.to}.xlsx`,
+      filename: t('wallet.statement.fileName', { name: safeOwnerName, from: filters.value.from, to: filters.value.to }),
       sheets: [{
-        name: '個人錢包流水',
-        title: `${ownerName}｜個人錢包對帳單`,
-        subtitle: `${filters.value.from} 至 ${filters.value.to}｜類型：${filters.value.type === 'all' ? '全部分類' : (typeLabels[filters.value.type] || filters.value.type)}`,
+        name: t('wallet.statement.sheetName'),
+        title: t('wallet.statement.title', { name: ownerName }),
+        subtitle: t('wallet.statement.subtitle', {
+          from: filters.value.from,
+          to: filters.value.to,
+          type: filters.value.type === 'all' ? t('wallet.statement.allTypes') : walletLogTypeLabel(filters.value.type),
+        }),
         summary: [
-          { label: '期初餘額', value: Number(firstLog.beforeBalance) || 0 },
-          { label: '期間入帳', value: credits },
-          { label: '期間支出', value: debits },
-          { label: '期末餘額', value: Number(lastLog.afterBalance) || 0 },
+          { label: t('wallet.statement.openingBalance'), value: fromMinorUnits(firstLog.beforeBalance) },
+          { label: t('wallet.statement.credits'), value: fromMinorUnits(credits) },
+          { label: t('wallet.statement.debits'), value: fromMinorUnits(debits) },
+          { label: t('wallet.statement.closingBalance'), value: fromMinorUnits(lastLog.afterBalance) },
         ],
         columns: [
-          { header: '時間', key: 'timestamp', width: 21, numFmt: 'yyyy/mm/dd hh:mm:ss' },
-          { header: '類型', key: 'type', width: 17 },
-          { header: '編輯群組', key: 'editGroup', width: 12 },
-          { header: '店家', key: 'storeName', width: 22 },
-          { header: '品項明細', key: 'items', width: 42, wrapText: true },
-          { header: '金額', key: 'amount', width: 14, numFmt: '#,##0;[Red]-#,##0;0' },
-          { header: '變更前', key: 'beforeBalance', width: 14, numFmt: '#,##0' },
-          { header: '變更後', key: 'afterBalance', width: 14, numFmt: '#,##0' },
-          { header: '說明', key: 'reason', width: 38, wrapText: true },
-          { header: '操作者', key: 'operatorName', width: 15 },
+          { header: t('wallet.statement.time'), key: 'timestamp', width: 21, numFmt: 'yyyy/mm/dd hh:mm:ss' },
+          { header: t('wallet.statement.type'), key: 'type', width: 17 },
+          { header: t('wallet.statement.editGroup'), key: 'editGroup', width: 12 },
+          { header: t('wallet.statement.store'), key: 'storeName', width: 22 },
+          { header: t('wallet.statement.items'), key: 'items', width: 42, wrapText: true },
+          { header: t('wallet.statement.amount'), key: 'amount', width: 14, numFmt: excelMoneyFormat() },
+          { header: t('wallet.statement.before'), key: 'beforeBalance', width: 14, numFmt: excelMoneyFormat({ signed: false }) },
+          { header: t('wallet.statement.after'), key: 'afterBalance', width: 14, numFmt: excelMoneyFormat({ signed: false }) },
+          { header: t('wallet.statement.reason'), key: 'reason', width: 38, wrapText: true },
+          { header: t('wallet.statement.operator'), key: 'operatorName', width: 15 },
         ],
         rows: statementLogs.map(log => ({
           timestamp: Number(log.timestamp) ? new Date(Number(log.timestamp)) : '',
-          type: typeLabels[log.type] || log.type || '',
+          type: walletLogTypeLabel(log.type),
           editGroup: editGroupShortId(log),
           storeName: log.storeName || '',
           items: exportItemSummary(log),
-          amount: Number(log.amount) || 0,
-          beforeBalance: Number(log.beforeBalance) || 0,
-          afterBalance: Number(log.afterBalance) || 0,
+          amount: fromMinorUnits(log.amount),
+          beforeBalance: fromMinorUnits(log.beforeBalance),
+          afterBalance: fromMinorUnits(log.afterBalance),
           reason: logReason(log),
           operatorName: log.operatorName || '',
         })),
         signedAmountKey: 'amount',
       }],
     })
-    showToast('個人錢包對帳單已匯出', 'success')
+    showToast(t('wallet.statement.exported'), 'success')
   } catch (error) {
     console.error('[WalletPanel] statement export failed:', error)
-    showToast('對帳單匯出失敗，請稍後再試', 'error')
+    showToast(t('wallet.statement.failed'), 'error')
   } finally {
     exporting.value = false
   }
@@ -420,7 +417,7 @@ watch([userDisplayName, userUid], ([name, uid]) => {
     wallet.value = snap.exists() ? snap.data() : { ownerUid: uid, ownerName: name, balance: 0 }
     loading.value = false
   }, () => {
-    walletError.value = '錢包餘額暫時載入失敗，請重新開啟此頁再試。'
+    walletError.value = t('wallet.balanceFailed')
     loading.value = false
   })
 }, { immediate: true })
@@ -437,50 +434,50 @@ onUnmounted(() => {
 <template>
   <section class="wallet-panel ops-surface" :aria-busy="pageLoading">
     <Teleport :to="toolbarTarget || 'body'" :disabled="!toolbarTarget || !desktopToolbar">
-      <div class="wallet-filters period-controls" :class="{ 'teleported-toolbar': toolbarTarget && desktopToolbar }" aria-label="錢包統計期間">
+      <div class="wallet-filters period-controls" :class="{ 'teleported-toolbar': toolbarTarget && desktopToolbar }" :aria-label="t('wallet.periodAria')">
         <div class="filter-field">
-          <span>開始日期</span>
-          <AppDatePicker v-model="filters.from" @change="rangeEndPicker?.openPicker()" :max="filters.to || undefined" aria-label="錢包開始日期" compact />
+          <span>{{ t('wallet.startDate') }}</span>
+          <AppDatePicker v-model="filters.from" @change="rangeEndPicker?.openPicker()" :max="filters.to || undefined" :aria-label="t('wallet.startAria')" compact />
         </div>
         <span class="date-sep" aria-hidden="true">—</span>
         <div class="filter-field">
-          <span>結束日期</span>
-          <AppDatePicker ref="rangeEndPicker" v-model="filters.to" :min="filters.from || undefined" aria-label="錢包結束日期" compact />
+          <span>{{ t('wallet.endDate') }}</span>
+          <AppDatePicker ref="rangeEndPicker" v-model="filters.to" :min="filters.from || undefined" :aria-label="t('wallet.endAria')" compact />
         </div>
-        <button type="button" class="toolbar-secondary-btn" @click="resetFilters">回到本月</button>
+        <button type="button" class="toolbar-secondary-btn" @click="resetFilters">{{ t('wallet.thisMonth') }}</button>
       </div>
     </Teleport>
-    <p class="wallet-scope">我的錢包｜僅顯示你的錢包交易，不包含現金付款。取消與免費退款會反映於交易紀錄。</p>
-    <LoadingState v-if="pageLoading" title="正在載入錢包…" description="正在取得餘額、餐費統計與交易紀錄，請稍候。" />
+    <p class="wallet-scope">{{ t('wallet.scope') }}</p>
+    <LoadingState v-if="pageLoading" :title="t('wallet.loadingTitle')" :description="t('wallet.loadingText')" />
     <StatusNotice v-else-if="walletError || logsError" :title="walletError || logsError" alert>
-      <button v-if="!walletError" type="button" class="toolbar-secondary-btn" @click="loadWalletLogs">重新載入</button>
+      <button v-if="!walletError" type="button" class="toolbar-secondary-btn" @click="loadWalletLogs">{{ t('wallet.reload') }}</button>
     </StatusNotice>
     <template v-else>
     <div class="wallet-head">
       <div class="balance-hero summary-strip summary-success" :class="{ low: isLowBalance }">
         <div class="hero-balance">
           <div class="hero-top">
-            <span class="hero-label">目前餘額</span>
+            <span class="hero-label">{{ t('wallet.balance') }}</span>
             <i class="fas fa-wallet" aria-hidden="true"></i>
           </div>
           <div class="hero-amount">
-            <span class="hero-currency">NT$</span>
-            <span class="hero-value">{{ balance.toLocaleString() }}</span>
+            <span class="hero-currency">{{ getAppCurrency().symbol }}</span>
+            <span class="hero-value">{{ formatMinorAmount(balance) }}</span>
           </div>
-          <div class="hero-owner">{{ userDisplayName || '我的錢包' }}</div>
+          <div class="hero-owner">{{ userDisplayName || t('wallet.myWallet') }}</div>
         </div>
 
-        <div class="hero-metrics" aria-label="錢包期間摘要">
+        <div class="hero-metrics" :aria-label="t('wallet.summaryAria')">
           <div class="hero-metric">
-            <span>期間錢包餐費</span>
+            <span>{{ t('wallet.periodSpending') }}</span>
             <strong>{{ formatMoney(periodSpending) }}</strong>
-            <small>{{ orderCount }} 筆點餐扣款</small>
+            <small>{{ t('wallet.orderDebits', { count: orderCount }) }}</small>
           </div>
-          <div class="hero-metric"><span>期間退款入帳</span><strong>{{ formatMoney(periodRefund) }}</strong><small>含取消、免費與編輯退款</small></div>
+          <div class="hero-metric"><span>{{ t('wallet.periodRefund') }}</span><strong>{{ formatMoney(periodRefund) }}</strong><small>{{ t('wallet.refundHint') }}</small></div>
           <div class="hero-metric">
-            <span>區間儲值</span>
+            <span>{{ t('wallet.periodTopUp') }}</span>
             <strong>{{ formatMoney(periodTopUp) }}</strong>
-            <small>{{ periodTopUpLogs.length }} 筆儲值</small>
+            <small>{{ t('wallet.topUpCount', { count: periodTopUpLogs.length }) }}</small>
           </div>
         </div>
       </div>
@@ -488,20 +485,20 @@ onUnmounted(() => {
     </div>
 
     <div v-if="isLowBalance" class="low-alert">
-      錢包餘額低於 {{ formatMoney(LOW_WALLET_BALANCE) }}，請聯繫總務儲值。
+      {{ t('wallet.lowBalance', { amount: formatMoney(lowBalanceThreshold) }) }}
     </div>
 
     <details class="spending-analysis" open>
       <summary>
-        <h2 class="analysis-title">消費分析・趨勢與常點餐點</h2>
+        <h2 class="analysis-title">{{ t('wallet.analysisTitle') }}</h2>
         <span class="average-stat">
-            <span>平均每筆扣款</span>
+            <span>{{ t('wallet.averageDebit') }}</span>
             <strong>{{ formatMoney(averageSpending) }}</strong>
             <small v-if="averageComparison && !averageComparison.flat">
-              較上期{{ averageComparison.saving ? '減少' : '增加' }} {{ averageComparison.pct }}%
+              {{ t(averageComparison.saving ? 'wallet.comparedLess' : 'wallet.comparedMore', { pct: averageComparison.pct }) }}
             </small>
-            <small v-else-if="averageComparison?.flat">與上期持平</small>
-            <small v-else>上期無資料</small>
+            <small v-else-if="averageComparison?.flat">{{ t('wallet.comparedFlat') }}</small>
+            <small v-else>{{ t('wallet.noPrevious') }}</small>
         </span>
       </summary>
     <!-- 期間花費趨勢／最常點／常訂店家 -->
@@ -509,11 +506,11 @@ onUnmounted(() => {
       <section class="analytics-card weekly-card">
         <div class="analytics-head">
           <div>
-            <h3 class="section-title">所選期間花費</h3>
+            <h3 class="section-title">{{ t('wallet.periodChart') }}</h3>
             <span class="analytics-subtitle">{{ periodLabel }}</span>
           </div>
         </div>
-        <div v-if="hasWeeklySpending" class="weekly-bars" role="img" aria-label="所選期間花費長條圖">
+        <div v-if="hasWeeklySpending" class="weekly-bars" role="img" :aria-label="t('wallet.chartAria')">
           <div
             v-for="week in weeklySpending"
             :key="week.start"
@@ -527,13 +524,13 @@ onUnmounted(() => {
             <span class="weekly-label" :class="{ peak: week.isPeak }">{{ week.label }}</span>
           </div>
         </div>
-        <StatusNotice v-else title="所選期間還沒有消費紀錄" description="換一段日期區間，或先去點一餐。" />
+        <StatusNotice v-else :title="t('wallet.noSpending')" :description="t('wallet.noSpendingHint')" />
       </section>
 
       <section class="analytics-card fav-card">
         <div class="analytics-head">
           <div>
-            <h3 class="section-title">最常點</h3>
+            <h3 class="section-title">{{ t('wallet.favorites') }}</h3>
             <span class="analytics-subtitle">{{ periodLabel }}</span>
           </div>
         </div>
@@ -547,31 +544,31 @@ onUnmounted(() => {
               <span class="fav-meal">{{ dish.meal }}</span>
               <span v-if="dish.store" class="fav-store">{{ dish.store }}</span>
             </div>
-            <span class="fav-count">{{ dish.count }} 次</span>
+            <span class="fav-count">{{ t('wallet.times', { count: dish.count }) }}</span>
           </div>
         </div>
-        <StatusNotice v-else title="所選期間還沒有點餐紀錄" description="換一段日期區間看看。" />
+        <StatusNotice v-else :title="t('wallet.noOrders')" :description="t('wallet.tryAnotherRange')" />
       </section>
 
       <section class="analytics-card insights-card">
         <div class="analytics-head">
           <div>
-            <h3 class="section-title">常訂店家</h3>
-            <span class="analytics-subtitle">依點餐扣款次數・前 5 名</span>
+            <h3 class="section-title">{{ t('wallet.topStores') }}</h3>
+            <span class="analytics-subtitle">{{ t('wallet.topStoresHint') }}</span>
           </div>
         </div>
         <div v-if="storeRanking.length" class="ranking-list">
           <div v-for="(store, index) in storeRanking" :key="store.name" class="ranking-item">
             <div class="ranking-label">
               <span><b>{{ index + 1 }}</b>{{ store.name }}</span>
-              <strong>{{ store.amount }} 次</strong>
+              <strong>{{ t('wallet.times', { count: store.amount }) }}</strong>
             </div>
             <div class="ranking-track">
               <span :style="{ width: `${Math.max(6, store.amount / maxStoreSpending * 100)}%` }"></span>
             </div>
           </div>
         </div>
-        <StatusNotice v-else title="所選期間還沒有店家消費" description="換一段日期區間看看。" />
+        <StatusNotice v-else :title="t('wallet.noStores')" :description="t('wallet.tryAnotherRange')" />
       </section>
     </div>
 
@@ -579,46 +576,46 @@ onUnmounted(() => {
 
     <div class="log-card">
       <div class="log-head">
-        <h2 class="section-title">交易紀錄</h2>
+        <h2 class="section-title">{{ t('wallet.logs') }}</h2>
         <div class="log-status">
           <button
             type="button"
             class="export-statement-btn"
             :disabled="exporting || logsLoading || myLogs.length === 0"
             @click="exportStatement"
-          >{{ exporting ? '匯出中…' : '匯出 XLSX' }}</button>
-          <span v-if="logsError" class="sync-chip warning">同步延遲</span>
-          <span v-else-if="logsLoading" class="sync-chip">同步中</span>
-          <span v-else class="sync-chip done">已同步</span>
-          <span class="log-count">{{ myLogs.length }} 筆</span>
+          >{{ exporting ? t('wallet.exporting') : t('wallet.exportXlsx') }}</button>
+          <span v-if="logsError" class="sync-chip warning">{{ t('wallet.syncDelayed') }}</span>
+          <span v-else-if="logsLoading" class="sync-chip">{{ t('wallet.syncing') }}</span>
+          <span v-else class="sync-chip done">{{ t('wallet.synced') }}</span>
+          <span class="log-count">{{ t('wallet.logCount', { count: myLogs.length }) }}</span>
         </div>
       </div>
 
-      <div class="wallet-filters log-filters" aria-label="交易紀錄篩選">
+      <div class="wallet-filters log-filters" :aria-label="t('wallet.logFiltersAria')">
         <div class="filter-field type-filter">
-          <span>交易分類</span>
+          <span>{{ t('wallet.typeFilter') }}</span>
           <select v-model="filters.type">
-            <option value="all">全部分類</option>
+            <option value="all">{{ t('wallet.allTypes') }}</option>
             <option v-for="option in typeOptions" :key="option.value" :value="option.value">
               {{ option.label }}
             </option>
           </select>
         </div>
 
-        <span class="filter-note">分類僅篩選下方交易紀錄</span>
+        <span class="filter-note">{{ t('wallet.filterNote') }}</span>
       </div>
 
-      <StatusNotice v-if="myLogs.length === 0" title="目前沒有符合條件的交易紀錄" description="可調整日期或分類，查看其他交易。" />
+      <StatusNotice v-if="myLogs.length === 0" :title="t('wallet.noLogs')" :description="t('wallet.noLogsHint')" />
       <template v-else>
       <div class="log-table-wrap">
         <table class="log-table">
           <thead>
             <tr>
-              <th class="nowrap">時間</th>
-              <th>說明</th>
-              <th class="right">金額</th>
-              <th class="right">餘額</th>
-              <th class="detail-col" aria-label="明細"></th>
+              <th class="nowrap">{{ t('wallet.time') }}</th>
+              <th>{{ t('wallet.description') }}</th>
+              <th class="right">{{ t('wallet.amount') }}</th>
+              <th class="right">{{ t('wallet.balanceColumn') }}</th>
+              <th class="detail-col" :aria-label="t('wallet.detail')"></th>
             </tr>
           </thead>
           <tbody>
@@ -633,10 +630,10 @@ onUnmounted(() => {
                 <td class="right mono amount" :class="{ plus: Number(log.amount) > 0, minus: Number(log.amount) < 0 }">
                   {{ formatAmount(log.amount) }}
                 </td>
-                <td class="right mono after">{{ Number(log.afterBalance || 0).toLocaleString() }}</td>
+                <td class="right mono after">{{ formatMinorAmount(log.afterBalance) }}</td>
                 <td class="detail-col">
                   <button v-if="hasDetail(log)" type="button" class="detail-toggle">
-                    {{ expandedIds.includes(log.id) ? '收合' : '明細' }}
+                    {{ expandedIds.includes(log.id) ? t('wallet.collapse') : t('wallet.detail') }}
                   </button>
                 </td>
               </tr>
@@ -647,7 +644,7 @@ onUnmounted(() => {
                   <div v-if="log.type === MERGED_EDIT_TYPE" class="detail-list">
                     <div v-for="pair in log.pairLogs" :key="pair.id" class="detail-item">
                       <div class="detail-main">
-                        <span class="detail-meal">{{ typeLabels[pair.type] || pair.type }}</span>
+                        <span class="detail-meal">{{ walletLogTypeLabel(pair.type) }}</span>
                         <span v-if="pair.items && pair.items[0]" class="detail-note">{{ pair.items[0].meal }}<template v-if="pair.items[0].note">・{{ pair.items[0].note }}</template></span>
                       </div>
                       <span class="detail-price mono" :class="{ plus: Number(pair.amount) > 0, minus: Number(pair.amount) < 0 }">
@@ -655,7 +652,7 @@ onUnmounted(() => {
                       </span>
                     </div>
                     <div class="detail-total">
-                      <span>淨額</span>
+                      <span>{{ t('wallet.net') }}</span>
                       <strong :class="{ plus: Number(log.amount) > 0, minus: Number(log.amount) < 0 }">{{ formatAmount(log.amount) }}</strong>
                     </div>
                   </div>
@@ -669,7 +666,7 @@ onUnmounted(() => {
                       <span class="detail-price mono">{{ formatMoney(Number(item.price || 0)) }}</span>
                     </div>
                     <div class="detail-total">
-                      <span>合計</span>
+                      <span>{{ t('wallet.total') }}</span>
                       <strong>{{ formatMoney(Math.abs(Number(log.amount || 0))) }}</strong>
                     </div>
                   </div>
@@ -696,9 +693,9 @@ onUnmounted(() => {
             </div>
             <div class="lc-foot">
               <span class="lc-time mono">{{ formatTime(log.timestamp) }}</span>
-              <span class="lc-balance mono">餘額 {{ Number(log.afterBalance || 0).toLocaleString() }}</span>
+              <span class="lc-balance mono">{{ t('wallet.balanceShort', { amount: formatMinorAmount(log.afterBalance) }) }}</span>
               <button v-if="hasDetail(log)" type="button" class="lc-detail-toggle">
-                {{ expandedIds.includes(log.id) ? '收合明細' : '明細' }}
+                {{ expandedIds.includes(log.id) ? t('wallet.collapseDetail') : t('wallet.detail') }}
               </button>
             </div>
 
@@ -706,7 +703,7 @@ onUnmounted(() => {
               <div v-if="log.type === MERGED_EDIT_TYPE" class="detail-list">
                 <div v-for="pair in log.pairLogs" :key="pair.id" class="detail-item">
                   <div class="detail-main">
-                    <span class="detail-meal">{{ typeLabels[pair.type] || pair.type }}</span>
+                    <span class="detail-meal">{{ walletLogTypeLabel(pair.type) }}</span>
                     <span v-if="pair.items && pair.items[0]" class="detail-note">{{ pair.items[0].meal }}<template v-if="pair.items[0].note">・{{ pair.items[0].note }}</template></span>
                   </div>
                   <span class="detail-price mono" :class="{ plus: Number(pair.amount) > 0, minus: Number(pair.amount) < 0 }">
@@ -714,7 +711,7 @@ onUnmounted(() => {
                   </span>
                 </div>
                 <div class="detail-total">
-                  <span>淨額</span>
+                  <span>{{ t('wallet.net') }}</span>
                   <strong :class="{ plus: Number(log.amount) > 0, minus: Number(log.amount) < 0 }">{{ formatAmount(log.amount) }}</strong>
                 </div>
               </div>
@@ -728,7 +725,7 @@ onUnmounted(() => {
                   <span class="detail-price mono">{{ formatMoney(Number(item.price || 0)) }}</span>
                 </div>
                 <div class="detail-total">
-                  <span>合計</span>
+                  <span>{{ t('wallet.total') }}</span>
                   <strong>{{ formatMoney(Math.abs(Number(log.amount || 0))) }}</strong>
                 </div>
               </div>

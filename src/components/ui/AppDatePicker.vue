@@ -1,14 +1,15 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { formatDateShort as formatDate } from '../../utils/format'
+import { formatDateShort as formatDate, getFormatLocale } from '../../utils/format'
+import { t } from '../../i18n'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
   min: { type: String, default: '' },
   max: { type: String, default: '' },
   mode: { type: String, default: 'date' },
-  ariaLabel: { type: String, default: '選擇日期' },
-  placeholder: { type: String, default: '選擇日期' },
+  ariaLabel: { type: String, default: '' },
+  placeholder: { type: String, default: '' },
   compact: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
 })
@@ -26,7 +27,11 @@ const popoverStyle = ref({ left: '12px', top: '12px' })
 
 const isDateTime = computed(() => props.mode === 'datetime')
 const isMonth = computed(() => props.mode === 'month')
-const weekdays = ['日', '一', '二', '三', '四', '五', '六']
+// 星期與月份名稱跟著介面語言（2023-01-01 是星期日）。
+const weekdays = computed(() => Array.from({ length: 7 }, (_, index) =>
+  new Date(2023, 0, 1 + index).toLocaleDateString(getFormatLocale(), { weekday: 'narrow' })))
+const labelText = computed(() => props.ariaLabel || t('ui.datePicker.pick'))
+const placeholderText = computed(() => props.placeholder || t('ui.datePicker.pick'))
 const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, '0'))
 const minutes = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'))
 
@@ -61,7 +66,7 @@ function syncDraft() {
   draftMinute.value = time?.[2] || '00'
 }
 
-const monthLabel = computed(() => viewDate.value.toLocaleDateString('zh-TW', {
+const monthLabel = computed(() => viewDate.value.toLocaleDateString(getFormatLocale(), {
   year: 'numeric',
   month: 'long',
 }))
@@ -95,7 +100,7 @@ const calendarMonths = computed(() => {
     const value = `${year}-${String(index + 1).padStart(2, '0')}`
     return {
       value,
-      label: `${index + 1}月`,
+      label: new Date(year, index, 1).toLocaleDateString(getFormatLocale(), { month: 'short' }),
       selected: value === draftDate.value,
       current: value === localIso(new Date()).slice(0, 7),
       disabled: Boolean((minMonth && value < minMonth) || (maxMonth && value > maxMonth)),
@@ -106,10 +111,12 @@ const calendarMonths = computed(() => {
 const displayValue = computed(() => {
   if (isMonth.value) {
     const match = String(props.modelValue || '').match(/^(\d{4})-(\d{2})$/)
-    return match ? `${match[1]}年${Number(match[2])}月` : props.placeholder
+    return match
+      ? new Date(Number(match[1]), Number(match[2]) - 1, 1).toLocaleDateString(getFormatLocale(), { year: 'numeric', month: 'long' })
+      : placeholderText.value
   }
   const date = validDate(props.modelValue)
-  if (!date) return props.placeholder
+  if (!date) return placeholderText.value
   const dateText = formatDate(date)
   if (!isDateTime.value) return dateText
   const time = String(props.modelValue).match(/T(\d{2}):(\d{2})/)
@@ -252,7 +259,7 @@ onBeforeUnmount(() => {
       type="button"
       class="date-trigger"
       :disabled="disabled"
-      :aria-label="ariaLabel"
+      :aria-label="labelText"
       :aria-expanded="open"
       aria-haspopup="dialog"
       @click="toggle"
@@ -272,12 +279,12 @@ onBeforeUnmount(() => {
           class="date-popover"
           :style="popoverStyle"
           role="dialog"
-          :aria-label="ariaLabel"
+          :aria-label="labelText"
         >
           <div class="calendar-header">
-            <button type="button" class="month-nav" :aria-label="isMonth ? '上一年' : '上個月'" @click="isMonth ? shiftYear(-1) : shiftMonth(-1)">‹</button>
-            <strong>{{ isMonth ? `${viewDate.getFullYear()}年` : monthLabel }}</strong>
-            <button type="button" class="month-nav" :aria-label="isMonth ? '下一年' : '下個月'" @click="isMonth ? shiftYear(1) : shiftMonth(1)">›</button>
+            <button type="button" class="month-nav" :aria-label="isMonth ? t('ui.datePicker.previousYear') : t('ui.datePicker.previousMonth')" @click="isMonth ? shiftYear(-1) : shiftMonth(-1)">‹</button>
+            <strong>{{ isMonth ? viewDate.toLocaleDateString(getFormatLocale(), { year: 'numeric' }) : monthLabel }}</strong>
+            <button type="button" class="month-nav" :aria-label="isMonth ? t('ui.datePicker.nextYear') : t('ui.datePicker.nextMonth')" @click="isMonth ? shiftYear(1) : shiftMonth(1)">›</button>
           </div>
 
           <div v-if="isMonth" class="month-grid">
@@ -294,7 +301,7 @@ onBeforeUnmount(() => {
             >{{ month.label }}</button>
           </div>
           <div v-if="!isMonth" class="weekday-grid" aria-hidden="true">
-            <span v-for="weekday in weekdays" :key="weekday">{{ weekday }}</span>
+            <span v-for="(weekday, index) in weekdays" :key="index">{{ weekday }}</span>
           </div>
           <div v-if="!isMonth" class="day-grid">
             <button
@@ -311,19 +318,19 @@ onBeforeUnmount(() => {
           </div>
 
           <div v-if="isDateTime" class="time-row">
-            <span class="time-label">時間</span>
-            <select v-model="draftHour" aria-label="小時">
+            <span class="time-label">{{ t('ui.datePicker.time') }}</span>
+            <select v-model="draftHour" :aria-label="t('ui.datePicker.hour')">
               <option v-for="hour in hours" :key="hour" :value="hour">{{ hour }}</option>
             </select>
             <span>:</span>
-            <select v-model="draftMinute" aria-label="分鐘">
+            <select v-model="draftMinute" :aria-label="t('ui.datePicker.minute')">
               <option v-for="minute in minutes" :key="minute" :value="minute">{{ minute }}</option>
             </select>
           </div>
 
           <div class="calendar-footer">
-            <button type="button" class="today-button" @click="selectToday">{{ isMonth ? '本月' : '今天' }}</button>
-            <button v-if="isDateTime" type="button" class="confirm-button" @click="confirmDateTime">套用</button>
+            <button type="button" class="today-button" @click="selectToday">{{ isMonth ? t('ui.datePicker.thisMonth') : t('ui.datePicker.today') }}</button>
+            <button v-if="isDateTime" type="button" class="confirm-button" @click="confirmDateTime">{{ t('ui.datePicker.apply') }}</button>
           </div>
         </div>
       </Transition>

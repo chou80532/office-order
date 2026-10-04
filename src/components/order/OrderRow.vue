@@ -14,6 +14,7 @@
  */
 import { computed } from 'vue'
 import { formatMoney } from '../../utils/format'
+import { t } from '../../i18n'
 import { getAvatarColor } from '../../utils'
 
 const props = defineProps({
@@ -34,7 +35,7 @@ const amount = computed(() => Number(props.order?.price || 0).toLocaleString())
   <div class="order-row" :class="{ free: order.isFree, 'is-self': isSelf, 'is-editing': editing }">
     <span class="or-person">
       <span class="or-avatar" :style="{ background: getAvatarColor(order.name) }" aria-hidden="true">{{ initial }}</span>
-      <span class="or-name">{{ order.name }}<em v-if="isSelf" class="or-self">你</em></span>
+      <span class="or-name">{{ order.name }}<em v-if="isSelf" class="or-self">{{ t('dish.row.you') }}</em></span>
     </span>
 
     <span class="or-meal">
@@ -51,7 +52,7 @@ const amount = computed(() => Number(props.order?.price || 0).toLocaleString())
       <slot v-if="editing" name="edit-money" />
       <template v-else>
         {{ formatMoney(amount) }}
-        <span v-if="order.isFree" class="or-flag">免費</span>
+        <span v-if="order.isFree" class="or-flag">{{ t('dish.row.free') }}</span>
       </template>
     </span>
 

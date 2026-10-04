@@ -11,6 +11,7 @@ This inventory records license information for direct dependencies, relevant tra
 | `firebase` | Runtime client SDK | 12.15.0 | Apache-2.0 |
 | `vue` | Runtime | 3.5.39 | MIT |
 | `vue-router` | Runtime | 5.1.0 | MIT |
+| `vue-i18n` (with `@intlify/*`) | Runtime | 11.4.13 | MIT |
 | `firebase-admin` | Cloud Functions runtime | 13.10.0 | Apache-2.0 |
 | `firebase-functions` | Cloud Functions runtime | 7.4.0 | MIT |
 | `@firebase/rules-unit-testing` | Emulator test tooling | 5.0.2 | Apache-2.0 |

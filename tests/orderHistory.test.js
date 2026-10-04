@@ -67,8 +67,8 @@ describe('所選區間的完整歷史資料', () => {
   })
 
   it('無效或倒置日期在查詢前拒絕', async () => {
-    await expect(fetchOrdersInRange(NaN, september.endMs)).rejects.toThrow('有效')
-    await expect(fetchOrdersInRange(september.endMs, september.startMs)).rejects.toThrow('有效')
+    await expect(fetchOrdersInRange(NaN, september.endMs)).rejects.toThrow('INVALID_RANGE')
+    await expect(fetchOrdersInRange(september.endMs, september.startMs)).rejects.toThrow('INVALID_RANGE')
     expect(state.calls).toHaveLength(0)
   })
 

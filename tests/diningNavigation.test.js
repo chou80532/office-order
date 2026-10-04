@@ -7,7 +7,7 @@ import { usePendingCart, resetPendingCart } from '../src/composables/usePendingC
 const mocks = vi.hoisted(() => ({ data: null, push: vi.fn() }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: (...args) => mocks.push(...args) }) }))
 vi.mock('../src/composables/useFirestore', () => ({ useFirestore: () => mocks.data }))
-vi.mock('../src/composables/useAuth', () => ({ useAuth: () => ({ userUid: ref('member') }) }))
+vi.mock('../src/composables/useAuth', () => ({ useAuth: () => ({ userUid: ref('member'), isAdmin: ref(false) }) }))
 vi.mock('../src/composables/useToast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
 vi.mock('../src/services/walletFunctions', () => ({ cancelDiningNeedViaFunction: vi.fn() }))
 const need = { id: 'n', name: 'Guest', uid: '', personKey: 'guest', status: 'pending', sourceStore: 'Old', targetStore: 'New', originals: [] }
@@ -15,7 +15,10 @@ let mounted
 beforeEach(() => {
   resetPendingCart(); useHomeActions().closePanel()
   mocks.push.mockReset().mockResolvedValue(undefined)
-  mocks.data = { diningDay: ref({ needs: { n: need } }), diningLoading: ref(false), diningError: ref('') }
+  mocks.data = {
+    systemSettings: ref({ timeZone: 'Asia/Taipei', paymentMethods: { wallet: true, cash: true }, proxyOrdering: 'all' }),
+    diningDay: ref({ needs: { n: need } }), diningLoading: ref(false), diningError: ref(''),
+  }
   mounted = mountComponent(DiningRecovery)
 })
 afterEach(() => mounted?.unmount())

@@ -7,7 +7,7 @@
 | `01_同步GitHub.bat` | 開發前更新目前 Git branch；工作目錄必須乾淨，僅允許 fast-forward。 |
 | `02_啟動模擬器與本地預覽.bat` | 在同一視窗啟動 Firebase Emulator Suite 與 Vite；需先執行 `npm ci` 與 `npm ci --prefix functions`。輸入 `q` 並按 Enter 會保存本機資料，再一起停止。 |
 | `03_建立本機示範帳號.bat` | 首次啟動 02 後，建立本機測試帳號與菜單；管理員帳號為 `admin@example.test`，密碼固定為 `office-order-demo`。有保存資料時，重建需要輸入 `SEED`。 |
-| `04_測試提交並推送.bat` | 依序執行存在的 lint、test、build script，檢查敏感檔案，人工確認後 Commit 與 Push。 |
+| `04_測試提交並推送.bat` | 依序執行存在的 lint、test、build script，檢查敏感檔案並暫存變更，輸入 Commit Message 後提交並推送；直接 Enter 使用日期時間（到分鐘），不需輸入 Y。 |
 | `05_重建本地測試資料.bat` | 先確認模擬器已關閉，再要求輸入 `RESET`，只清除本機 Emulator 資料；之後依提示啟動 02 與 03。 |
 
 `04` 會將 Git 目前可提交的變更全部暫存，請在確認前仔細閱讀 staged files 與 `git status`。取消或留空 Commit Message 時，只取消暫存，不刪除工作目錄修改。若遠端已有本機不包含的 Commit，請先人工同步。這些工具不會部署 Firebase。
@@ -19,5 +19,7 @@
 原本的本地預覽已併入 `02`。首次需要登入測試時，保持 `02` 執行，另開一個 CMD 執行 `03`。本機管理員帳號是 `admin@example.test`，密碼固定為 `office-order-demo`；其他示範帳號也使用相同密碼。這些帳密只能用於本機 Emulator。保存資料後，帳號與訂餐資料會在下次啟動時載入，毋須每次重建。若再次執行 `03`，會重新套用示範帳號、錢包餘額、菜單與每日設定。`03` 只連接 `demo-office-lunch` 的本機 Authentication 與 Firestore 模擬器。
 
 需要從頭測試時，先以 `q` 關閉 02，再執行 `05` 並輸入 `RESET`。`05` 不會自行啟動模擬器或執行 Seed，也不會清除 `node_modules`、程式碼、Git 或私人版。取消輸入不會刪除資料。清除後依序執行 02、03，使用上述固定的本機示範帳密登入。
+
+`04` 的流程寫在 `commit-and-push.cjs`，批次檔本身只保留 ASCII 內容：CMD 在 `chcp 65001` 下讀取含中文的批次檔時，`goto` 之後可能從錯誤位置繼續執行，把半行中文當成指令。若遠端有本機不包含的 Commit，`04` 會列出這些 Commit 後停止。
 
 `check-sensitive-files.cjs` 是 `04` 使用的檔名檢查器；它會檢查 Git 已追蹤與未追蹤檔案的名稱。檔名檢查無法取代提交前的內容審閱。

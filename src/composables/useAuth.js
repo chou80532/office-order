@@ -1,16 +1,24 @@
 import { computed, inject, provide, ref } from 'vue'
 import {
   EmailAuthProvider,
+  GoogleAuthProvider,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   reauthenticateWithCredential,
+  sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut,
   updatePassword,
 } from 'firebase/auth'
 import { auth } from '../firebase'
-import { completeInviteRegistrationViaFunction } from '../services/accountFunctions'
+import {
+  completeDomainRegistrationViaFunction,
+  completeFirstAdminSetupViaFunction,
+  completeInviteRegistrationViaFunction,
+  updateMyPreferencesViaFunction,
+} from '../services/accountFunctions'
 import { readStorage, removeStorage, writeStorage } from '../utils/storage'
 
 const AUTH_KEY = Symbol('auth')
@@ -53,6 +61,10 @@ export const createAuth = () => {
   let profileLoadPromise = Promise.resolve()
   const userDisplayName = ref('')
   const userUid = computed(() => currentUser.value?.uid || '')
+  // 成員自己的「允許他人代訂」授權（代訂規則為「需本人同意」時才有作用）。
+  const allowProxyOrders = ref(false)
+  // 已通過 Firebase 驗證、但還不是系統成員的帳號（Google 首次登入、公司信箱待驗證等）。
+  const pendingRegistration = ref(null)
 
   const loadUserProfile = async (user, revision) => {
     if (!user) return
@@ -67,6 +79,7 @@ export const createAuth = () => {
       const data = snap.data()
       userDisplayName.value = data.memberName || user.email?.split('@')[0] || ''
       isAdmin.value = !!data.isAdmin
+      allowProxyOrders.value = data.allowProxyOrders === true
       writeCachedProfile(user.uid, userDisplayName.value)
       setDoc(userDocRef, { lastLoginAt: serverTimestamp() }, { merge: true }).catch(() => {})
       return
@@ -111,6 +124,8 @@ export const createAuth = () => {
           isAdmin.value = false
           adminEmail.value = ''
           userDisplayName.value = ''
+          allowProxyOrders.value = false
+          pendingRegistration.value = null
           // 移除舊版未綁定 UID 的快取；新版快取保留供同帳號下次登入立即顯示。
           removeStorage('cachedDisplayName')
           removeStorage('cachedIsAdmin')
@@ -165,9 +180,133 @@ export const createAuth = () => {
     )
   }
 
+  // 讀取自己的成員資料；尚未註冊的帳號會被規則拒絕，視為沒有資料。
+  const readOwnProfile = async (uid) => {
+    const { db, doc, getDoc } = await getFirestoreContext()
+    try {
+      const snap = await getDoc(doc(db, 'users', uid))
+      return snap.exists() ? snap.data() : null
+    } catch (error) {
+      if (error?.code === 'permission-denied') return null
+      throw error
+    }
+  }
+
+  const activateProfile = (user, profile) => {
+    userDisplayName.value = profile.memberName || user.email?.split('@')[0] || ''
+    isAdmin.value = !!profile.isAdmin
+    allowProxyOrders.value = profile.allowProxyOrders === true
+    adminEmail.value = user.email || ''
+    writeCachedProfile(user.uid, userDisplayName.value)
+    pendingRegistration.value = null
+    profileLoadPromise = Promise.resolve()
+    profileLoaded.value = true
+    isLoggedIn.value = true
+  }
+
+  const describePendingUser = user => ({
+    email: user.email || '',
+    emailVerified: user.emailVerified === true,
+    providerId: user.providerData?.[0]?.providerId || 'password',
+  })
+
+  // 登入後先確認是否已是成員：是就直接進入系統，不是就保留登入狀態讓使用者完成註冊。
+  const finishSignIn = async (user) => {
+    try {
+      const profile = await readOwnProfile(user.uid)
+      if (profile && !profile.accountDeletionPending) {
+        activateProfile(user, profile)
+        return { needsRegistration: false }
+      }
+      pendingRegistration.value = describePendingUser(user)
+      return { needsRegistration: true }
+    } finally {
+      skipProfileLoad = false
+    }
+  }
+
   const login = async (email, password) => {
-    const cred = await signInWithEmailAndPassword(auth, email, password)
-    return cred.user
+    skipProfileLoad = true
+    let credential
+    try {
+      credential = await signInWithEmailAndPassword(auth, email, password)
+    } catch (error) {
+      skipProfileLoad = false
+      throw error
+    }
+    return finishSignIn(credential.user)
+  }
+
+  const signInWithGoogle = async () => {
+    skipProfileLoad = true
+    let credential
+    try {
+      const provider = new GoogleAuthProvider()
+      provider.setCustomParameters({ prompt: 'select_account' })
+      credential = await signInWithPopup(auth, provider)
+    } catch (error) {
+      skipProfileLoad = false
+      throw error
+    }
+    return finishSignIn(credential.user)
+  }
+
+  // 公司信箱自助註冊：建立帳號並寄出驗證信，驗證完成後再呼叫 completeRegistration。
+  const registerWithEmail = async (email, password) => {
+    skipProfileLoad = true
+    try {
+      const { user } = await createUserWithEmailAndPassword(auth, email, password)
+      await sendEmailVerification(user).catch(() => {})
+      pendingRegistration.value = describePendingUser(user)
+      return user
+    } catch (error) {
+      if (error.code === 'auth/email-already-in-use') throw new Error('EMAIL_EXISTS', { cause: error })
+      throw error
+    } finally {
+      skipProfileLoad = false
+    }
+  }
+
+  const refreshEmailVerification = async () => {
+    const user = auth.currentUser
+    if (!user) return false
+    await user.reload()
+    if (pendingRegistration.value) pendingRegistration.value = describePendingUser(user)
+    return user.emailVerified === true
+  }
+
+  const resendEmailVerification = async () => {
+    if (auth.currentUser) await sendEmailVerification(auth.currentUser)
+  }
+
+  // 已登入但尚未註冊的帳號：用邀請碼或公司信箱完成註冊。
+  const completeRegistration = async ({ inviteCode = '', memberName = '' } = {}) => {
+    const user = auth.currentUser
+    if (!user) throw new Error('UNAUTHENTICATED')
+    let result
+    if (inviteCode) {
+      result = await completeInviteRegistrationViaFunction(inviteCode.toUpperCase().trim())
+    } else {
+      // 剛點完驗證連結時，ID token 的 email_verified 還是舊值，要先強制更新。
+      await user.reload()
+      await user.getIdToken(true)
+      result = await completeDomainRegistrationViaFunction(memberName.trim())
+    }
+    const name = result?.memberName || ''
+    if (!name) throw new Error('INVALID_MEMBER_NAME')
+    activateProfile(user, { memberName: name, isAdmin: false })
+    return user
+  }
+
+  const cancelPendingRegistration = async () => {
+    pendingRegistration.value = null
+    await signOut(auth)
+  }
+
+  const updatePreferences = async (preferences) => {
+    const result = await updateMyPreferencesViaFunction(preferences)
+    if (typeof result?.allowProxyOrders === 'boolean') allowProxyOrders.value = result.allowProxyOrders
+    return result
   }
 
   const register = async (email, password, inviteCode) => {
@@ -203,6 +342,54 @@ export const createAuth = () => {
     skipProfileLoad = false
     return newUser
   }
+
+  // 首次部署：建立（或沿用 Firebase Console 已建立的）帳號，再以 SETUP_TOKEN 升為第一位管理員。
+  const setupFirstAdmin = async ({ email, password, setupToken, memberName, settings }) => {
+    skipProfileLoad = true
+    let user
+    let createdNewUser = false
+
+    try {
+      user = (await createUserWithEmailAndPassword(auth, email, password)).user
+      createdNewUser = true
+    } catch (error) {
+      if (error.code !== 'auth/email-already-in-use') {
+        skipProfileLoad = false
+        throw error
+      }
+      try {
+        user = (await signInWithEmailAndPassword(auth, email, password)).user
+      } catch (signInError) {
+        skipProfileLoad = false
+        throw new Error('EMAIL_EXISTS', { cause: signInError })
+      }
+    }
+
+    try {
+      const result = await completeFirstAdminSetupViaFunction({ setupToken, memberName, settings })
+      const name = result.memberName || ''
+      if (!name) throw new Error('INVALID_MEMBER_NAME')
+
+      userDisplayName.value = name
+      isAdmin.value = true
+      writeCachedProfile(user.uid, name)
+      profileLoaded.value = true
+      isLoggedIn.value = true
+    } catch (error) {
+      skipProfileLoad = false
+      // 只刪除這次流程新建的帳號；沿用的既有帳號改為登出。
+      if (createdNewUser) {
+        try { await user.delete() } catch { /* 保留原始錯誤 */ }
+      } else {
+        try { await signOut(auth) } catch { /* 保留原始錯誤 */ }
+      }
+      throw error
+    }
+
+    skipProfileLoad = false
+    return user
+  }
+
   const logout = async () => {
     await signOut(auth)
   }
@@ -232,9 +419,19 @@ export const createAuth = () => {
     userDisplayName,
     userUid,
     adminEmail,
+    allowProxyOrders,
+    pendingRegistration,
     initAuth,
     login,
+    signInWithGoogle,
     register,
+    registerWithEmail,
+    refreshEmailVerification,
+    resendEmailVerification,
+    completeRegistration,
+    cancelPendingRegistration,
+    updatePreferences,
+    setupFirstAdmin,
     logout,
     changePassword,
     resetPassword,
@@ -261,6 +458,8 @@ export const useAuth = () => {
       userDisplayName: ref(''),
       userUid: computed(() => ''),
       adminEmail: ref(''),
+      allowProxyOrders: ref(false),
+      pendingRegistration: ref(null),
       auth,
     }
   }

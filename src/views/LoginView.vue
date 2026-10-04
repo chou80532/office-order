@@ -1,16 +1,24 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import { useToast } from '../composables/useToast'
+import { useBranding } from '../composables/useBranding'
+import { usePublicConfig } from '../composables/usePublicConfig'
 import { readStorage, removeStorage, writeStorage } from '../utils/storage'
+import { firebaseAuthMessage } from '../utils/authErrors'
+import { t } from '../i18n'
 
 const SAVED_EMAIL_KEY = 'savedEmail'
 const REMEMBER_KEY = 'rememberEmail'
 
 const router = useRouter()
-const { login, resetPassword } = useAuth()
+const { login, signInWithGoogle, resetPassword } = useAuth()
 const { showToast } = useToast()
+const { brandName, brandLogo } = useBranding()
+const { publicConfig, loadPublicConfig } = usePublicConfig()
+const showGoogle = computed(() => publicConfig.value.registration.googleSignIn)
+const googleLoading = ref(false)
 
 const email = ref('')
 const password = ref('')
@@ -24,6 +32,8 @@ const shakeCard = ref(false)
 const forgotMode = ref(false)
 const resetEmail = ref('')
 const resetLoading = ref(false)
+// 全新部署（還沒有任何管理員）時提示前往首次設定；查詢失敗就不顯示，不影響登入。
+const needsSetup = computed(() => publicConfig.value.needsSetup)
 
 let clockTimer = null
 
@@ -46,16 +56,27 @@ onMounted(() => {
   if (remembered) email.value = readStorage(SAVED_EMAIL_KEY)
   tickClock()
   clockTimer = window.setInterval(tickClock, 1000)
+  loadPublicConfig()
 })
 onUnmounted(() => {
   if (clockTimer) window.clearInterval(clockTimer)
 })
 
-const ERROR_MAP = {
-  'auth/user-not-found': '帳號不存在',
-  'auth/wrong-password': '密碼錯誤',
-  'auth/invalid-credential': '帳號或密碼錯誤',
-  'auth/too-many-requests': '登入嘗試次數過多，請稍後再試'
+// 已通過 Firebase 驗證但還不是成員：導向註冊頁完成最後一步。
+function continueAfterSignIn(result) {
+  router.push(result?.needsRegistration ? '/register' : '/')
+}
+
+async function handleGoogle() {
+  if (googleLoading.value || loading.value) return
+  googleLoading.value = true
+  try {
+    continueAfterSignIn(await signInWithGoogle())
+  } catch (err) {
+    showToast(firebaseAuthMessage(err, 'auth.login.failed'), 'error')
+  } finally {
+    googleLoading.value = false
+  }
 }
 
 async function handleLogin() {
@@ -68,10 +89,10 @@ async function handleLogin() {
     })
     showToast(
       !email.value.trim() && !password.value.trim()
-        ? '請輸入帳號與密碼'
+        ? t('auth.login.emptyBoth')
         : !email.value.trim()
-          ? '請輸入帳號'
-          : '請輸入密碼',
+          ? t('auth.login.emptyEmail')
+          : t('auth.login.emptyPassword'),
       'error'
     )
     return
@@ -79,7 +100,7 @@ async function handleLogin() {
 
   loading.value = true
   try {
-    await login(email.value.trim(), password.value)
+    const result = await login(email.value.trim(), password.value)
     if (rememberMe.value) {
       writeStorage(REMEMBER_KEY, 'true')
       writeStorage(SAVED_EMAIL_KEY, email.value.trim())
@@ -87,10 +108,10 @@ async function handleLogin() {
       removeStorage(REMEMBER_KEY)
       removeStorage(SAVED_EMAIL_KEY)
     }
-    router.push('/')
+    continueAfterSignIn(result)
   } catch (err) {
     console.error('[Login error]', err.code, err.message)
-    showToast(ERROR_MAP[err.code] || '登入失敗，請稍後再試', 'error')
+    showToast(firebaseAuthMessage(err, 'auth.login.failed'), 'error')
   } finally {
     loading.value = false
   }
@@ -106,10 +127,10 @@ async function handleReset() {
   resetLoading.value = true
   try {
     await resetPassword(resetEmail.value.trim())
-    showToast('重設密碼信已寄出，請檢查信箱', 'success')
+    showToast(t('auth.login.resetSent'), 'success')
     forgotMode.value = false
   } catch {
-    showToast('寄送失敗，請確認 Email 是否正確', 'error')
+    showToast(t('auth.login.resetFailed'), 'error')
   } finally {
     resetLoading.value = false
   }
@@ -121,30 +142,30 @@ async function handleReset() {
     <div class="stage">
       <section class="brand-panel" aria-hidden="true">
         <div class="logo">
-          <img class="logo-mark" src="/office-lunch.svg" alt="" />
-          <div class="logo-text">Office Order <span>/ Group Ordering</span></div>
+          <img class="logo-mark" :src="brandLogo" alt="" />
+          <div class="logo-text">{{ brandName }} <span>{{ t('auth.login.brandSuffix') }}</span></div>
         </div>
 
         <div class="scene">
-          <div class="float-token t1">紅燒小排飯</div>
-          <div class="float-token t2">花雕雞飯</div>
-          <div class="float-token t3">招牌雞腿飯</div>
-          <div class="float-token t4">挪威鯖魚飯</div>
+          <div class="float-token t1">{{ t('auth.login.token1') }}</div>
+          <div class="float-token t2">{{ t('auth.login.token2') }}</div>
+          <div class="float-token t3">{{ t('auth.login.token3') }}</div>
+          <div class="float-token t4">{{ t('auth.login.token4') }}</div>
 
         </div>
 
         <div class="tagline">
-          <h1>今天午餐<br>想吃<span>什麼</span>？</h1>
-          <p>登入辦公室訂餐系統，瀏覽今日合作店家、加入訂單、與同事一起省下決定的時間。</p>
+          <h1>{{ t('auth.login.taglineLine1') }}<br>{{ t('auth.login.taglineLine2Before') }}<span>{{ t('auth.login.taglineHighlight') }}</span>{{ t('auth.login.taglineLine2After') }}</h1>
+          <p>{{ t('auth.login.intro') }}</p>
         </div>
 
         <div class="meta-row">
           <span class="dot"></span>
-          <span>系統運行中</span>
+          <span>{{ t('auth.login.systemRunning') }}</span>
           <span>·</span>
           <span>{{ nowStamp }}</span>
           <span>·</span>
-          <span>Self-hosted edition</span>
+          <span>{{ t('auth.login.edition') }}</span>
         </div>
       </section>
 
@@ -152,79 +173,92 @@ async function handleReset() {
 
 
         <div class="form-card" :class="{ shake: shakeCard }" @animationend="shakeCard = false">
-          <div class="eyebrow">員工登入 / Staff Sign In</div>
-          <h2>歡迎回來 👋</h2>
-          <p>輸入您的員工帳號，繼續今天的訂餐。</p>
+          <div class="eyebrow">{{ t('auth.login.eyebrow') }}</div>
+          <h2>{{ t('auth.login.title') }}</h2>
+          <p>{{ t('auth.login.subtitle') }}</p>
 
           <form v-if="forgotMode" class="login-form" @submit.prevent="handleReset">
-            <p class="forgot-hint">輸入 Email 後，我們會寄送重設密碼連結。</p>
+            <p class="forgot-hint">{{ t('auth.login.forgotHint') }}</p>
             <div class="field">
-              <label>Email</label>
+              <label for="reset-email">{{ t('auth.emailLabel') }}</label>
               <input
+                id="reset-email"
                 v-model="resetEmail"
                 type="email"
                 class="input"
-                placeholder="you@example.test"
+                :placeholder="t('auth.emailPlaceholder')"
                 autocomplete="email"
                 required
               />
             </div>
             <button class="submit-btn" :disabled="resetLoading" type="submit">
-              {{ resetLoading ? '寄送中…' : '寄送重設連結' }}
+              {{ resetLoading ? t('auth.login.sending') : t('auth.login.sendReset') }}
             </button>
-            <button class="text-btn" type="button" @click="forgotMode = false">← 返回登入</button>
+            <button class="text-btn" type="button" @click="forgotMode = false">← {{ t('auth.backToLogin') }}</button>
           </form>
 
           <form v-else class="login-form" @submit.prevent="handleLogin" autocomplete="off" novalidate>
             <div class="field">
-              <label>帳號 (Email)</label>
+              <label for="login-email">{{ t('auth.login.accountLabel') }}</label>
               <input
+                id="login-email"
                 v-model="email"
                 type="email"
                 class="input"
-                placeholder="請輸入帳號"
+                :placeholder="t('auth.login.accountPlaceholder')"
                 autocomplete="email"
                 required
               />
             </div>
 
             <div class="field">
-              <label>密碼</label>
+              <label for="login-password">{{ t('auth.passwordLabel') }}</label>
               <div class="input-wrap">
                 <input
+                  id="login-password"
                   v-model="password"
                   :type="showPassword ? 'text' : 'password'"
                   class="input"
-                  placeholder="請輸入密碼"
+                  :placeholder="t('auth.login.passwordPlaceholder')"
                   autocomplete="current-password"
                   required
                   @keydown="checkCapsLock"
                   @keyup="checkCapsLock"
                 />
                 <button class="eye-btn" type="button" @click="showPassword = !showPassword">
-                  {{ showPassword ? '隱藏' : '顯示' }}
+                  {{ showPassword ? t('auth.login.hide') : t('auth.login.show') }}
                 </button>
               </div>
-              <p v-if="capsLockOn && !showPassword" class="caps-warn">⇪ Caps Lock 已開啟</p>
+              <p v-if="capsLockOn && !showPassword" class="caps-warn">{{ t('auth.login.capsLock') }}</p>
             </div>
 
             <div class="row">
               <label class="remember">
                 <input v-model="rememberMe" type="checkbox" />
-                記住帳號
+                {{ t('auth.login.remember') }}
               </label>
-              <button class="text-btn" type="button" @click="openForgot">忘記密碼？</button>
+              <button class="text-btn" type="button" @click="openForgot">{{ t('auth.login.forgot') }}</button>
             </div>
 
             <button class="submit-btn" :disabled="loading" type="submit">
-              {{ loading ? '登入中…' : '登入並開始點餐' }}
+              {{ loading ? t('auth.login.submitting') : t('auth.login.submit') }}
             </button>
           </form>
 
-          <p class="register-link">沒有帳號？ <RouterLink to="/register">使用邀請碼註冊</RouterLink></p>
+          <template v-if="showGoogle && !forgotMode">
+            <div class="or-divider"><span>{{ t('auth.or') }}</span></div>
+            <button class="google-btn" type="button" :disabled="googleLoading || loading" @click="handleGoogle">
+              <i class="fab fa-google" aria-hidden="true"></i> {{ t('auth.google') }}
+            </button>
+          </template>
+
+          <p class="register-link">{{ t('auth.login.noAccount') }} <RouterLink to="/register">{{ t('auth.login.registerLink') }}</RouterLink></p>
+          <p v-if="needsSetup" class="setup-banner" role="status">
+            {{ t('auth.login.needsSetup') }} <RouterLink to="/setup">{{ t('auth.login.setupLink') }}</RouterLink>
+          </p>
         </div>
 
-        <div class="small-foot">Office Order · Self-hosted for your team</div>
+        <div class="small-foot">{{ t('auth.login.footer', { name: brandName }) }}</div>
       </section>
     </div>
   </div>
@@ -536,6 +570,51 @@ h2 + p { margin: 0 0 24px; color: var(--text-dim); }
   font-size: var(--text-label);
 }
 .register-link a {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.or-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 12px;
+  color: var(--text-dim);
+  font-size: var(--text-label);
+}
+.or-divider::before, .or-divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+
+.google-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 700;
+  font-size: var(--text-body);
+}
+.google-btn:hover:not(:disabled) { border-color: var(--accent); }
+.google-btn:disabled { opacity: .6; cursor: not-allowed; }
+
+.setup-banner {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--r-md);
+  text-align: center;
+  color: var(--text-dim);
+  font-size: var(--text-label);
+}
+.setup-banner a {
   color: var(--accent);
   font-weight: 700;
 }

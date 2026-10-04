@@ -1,23 +1,23 @@
 <template>
   <div class="member-panel ops-surface">
-    <h2 class="sr-only">成員名單</h2>
+    <h2 class="sr-only">{{ t('members.heading') }}</h2>
     <div class="member-add-row">
       <input
         v-model="newMemberName"
         type="text"
         class="member-input"
-        placeholder="輸入新成員姓名..."
+        :placeholder="t('members.newPlaceholder')"
         maxlength="10"
-        aria-label="新成員姓名"
+        :aria-label="t('members.newAria')"
         @keydown.enter="addMember"
       >
       <button type="button" class="btn btn-primary member-add-btn" @click="addMember" :disabled="!newMemberName.trim()">
-        <i class="fas fa-plus"></i> 新增
+        <i class="fas fa-plus"></i> {{ t('members.add') }}
       </button>
     </div>
 
     <div class="member-list-container">
-      <StatusNotice v-if="members.length === 0" title="尚無成員，請新增" description="在上方輸入姓名，再儲存成員名單。" />
+      <StatusNotice v-if="members.length === 0" :title="t('members.emptyTitle')" :description="t('members.emptyText')" />
       <TransitionGroup name="member-item" tag="div">
         <div v-for="(name, idx) in sortedMembers" :key="name" class="member-row">
           <div class="member-avatar" :style="{ background: getAvatarColor(name) }">{{ name.charAt(0) }}</div>
@@ -28,10 +28,10 @@
             v-if="adminMembers[name]"
             :class="['admin-toggle', { active: adminMembers[name]?.isAdmin }]"
             @click.stop="toggleAdmin(name)"
-            :title="adminMembers[name]?.isAdmin ? '點擊取消管理員' : '點擊設為管理員'"
+            :title="adminMembers[name]?.isAdmin ? t('members.demoteHint') : t('members.promoteHint')"
           >
             <i class="fas fa-shield-alt"></i>
-            <span>{{ adminMembers[name]?.isAdmin ? '管理員' : '一般' }}</span>
+            <span>{{ adminMembers[name]?.isAdmin ? t('members.admin') : t('members.regular') }}</span>
           </button>
 
           <!-- Invite status -->
@@ -41,22 +41,22 @@
             </template>
             <template v-else-if="inviteStatus[name]">
               <span v-if="inviteStatus[name].status === 'used'" class="invite-badge used">
-                <i class="fas fa-check-circle"></i> 已綁定
-                <button class="unbind-btn" @click.stop="handleUnbind(name)" :disabled="unbindingFor === name" title="解除綁定（刪除帳號）">
+                <i class="fas fa-check-circle"></i> {{ t('members.bound') }}
+                <button class="unbind-btn" @click.stop="handleUnbind(name)" :disabled="unbindingFor === name" :title="t('members.unbindHint')">
                   <span v-if="unbindingFor === name" class="mini-spinner mini-spinner-sm"></span>
                   <i v-else class="fas fa-unlink"></i>
                 </button>
               </span>
               <span v-else-if="inviteStatus[name].status === 'active'" class="invite-badge active">
                 <code class="invite-code-text">{{ inviteStatus[name].code }}</code>
-                <button class="copy-code-btn" @click.stop="copyCode(inviteStatus[name].code)" title="複製邀請碼">
+                <button class="copy-code-btn" @click.stop="copyCode(inviteStatus[name].code)" :title="t('members.copyCode')">
                   <i class="fas fa-copy"></i>
                 </button>
                 <span class="invite-expiry">{{ formatExpiry(inviteStatus[name].expiresAt) }}</span>
               </span>
               <span v-else-if="inviteStatus[name].status === 'expired'" class="invite-badge expired">
-                <i class="fas fa-clock"></i> 已過期
-                <button class="regen-btn" @click.stop="handleGenerateCode(name)" :disabled="generatingFor === name">
+                <i class="fas fa-clock"></i> {{ t('members.expired') }}
+                <button class="regen-btn" @click.stop="handleGenerateCode(name)" :disabled="generatingFor === name" :title="t('members.regenerate')" :aria-label="t('members.regenerate')">
                   <i class="fas fa-redo-alt"></i>
                 </button>
               </span>
@@ -65,13 +65,13 @@
               <button class="btn-generate" @click.stop="handleGenerateCode(name)" :disabled="generatingFor === name">
                 <span v-if="generatingFor === name" class="mini-spinner"></span>
                 <template v-else><i class="fas fa-ticket-alt"></i></template>
-                {{ generatingFor === name ? '' : '產生邀請碼' }}
+                {{ generatingFor === name ? '' : t('members.generate') }}
               </button>
             </template>
           </div>
 
           <span class="member-index">{{ idx + 1 }}</span>
-          <button class="btn-remove-member" @click="removeMember(name)" title="移除成員">
+          <button class="btn-remove-member" @click="removeMember(name)" :title="t('members.remove')" :aria-label="t('members.remove')">
             <i class="fas fa-trash-alt"></i>
           </button>
         </div>
@@ -82,12 +82,12 @@
       <button class="btn btn-primary footer-btn" @click="saveMembers" :disabled="isSavingMembers">
         <span v-if="isSavingMembers" class="mini-spinner"></span>
         <template v-else><i class="fas fa-save"></i></template>
-        {{ isSavingMembers ? '儲存中...' : `儲存名單（${members.length} 人）` }}
+        {{ isSavingMembers ? t('common.saving') : t('members.saveWithCount', { count: members.length }) }}
       </button>
-      <button class="btn btn-secondary footer-btn" @click="rebuildRoster" :disabled="isRebuildingRoster" title="依現有成員重建代訂名單（首次開放代訂或名單異常時使用）">
+      <button class="btn btn-secondary footer-btn" @click="rebuildRoster" :disabled="isRebuildingRoster" :title="t('members.rebuildHint')">
         <span v-if="isRebuildingRoster" class="mini-spinner"></span>
         <template v-else><i class="fas fa-user-friends"></i></template>
-        {{ isRebuildingRoster ? '重建中...' : '重建代訂名單' }}
+        {{ isRebuildingRoster ? t('members.rebuilding') : t('members.rebuild') }}
       </button>
     </div>
   </div>
@@ -104,6 +104,8 @@ import { confirmDialog } from '../../composables/useDialog'
 import { generateInviteCode, getInviteCodeForMember, deleteInviteCodesForMember } from '../../composables/useInviteCode'
 import { useAuth } from '../../composables/useAuth'
 import { deleteUserAccountViaFunction, setUserAdminStatusViaFunction, rebuildMemberRosterViaFunction } from '../../services/accountFunctions'
+import { compareText } from '../../utils/format'
+import { t, translateError } from '../../i18n'
 
 const { showToast } = useToast()
 const { userUid } = useAuth()
@@ -118,15 +120,15 @@ const isRebuildingRoster = ref(false)
 const inviteStatus = reactive({})
 const adminMembers = reactive({})
 
-const sortedMembers = computed(() => [...members.value].sort((a, b) => a.localeCompare(b, 'zh-TW')))
+const sortedMembers = computed(() => [...members.value].sort(compareText))
 
 const loadMembers = async () => {
   try {
     const snap = await getDoc(doc(db, 'settings', 'members'))
     if (snap.exists() && snap.data().names) members.value = [...snap.data().names]
   } catch (e) {
-    console.error('讀取成員失敗:', e)
-    showToast('讀取成員名單失敗，畫面上的名單可能不完整', 'error')
+    console.error('[Members] load failed', e)
+    showToast(t('members.loadFailed'), 'error')
   }
 }
 
@@ -145,7 +147,7 @@ const loadInviteStatuses = async () => {
         }
         inviteStatus[name] = info
       }
-    } catch (e) { console.error(`讀取 ${name} 邀請碼失敗:`, e) }
+    } catch (e) { console.error('[Members] invite code load failed', name, e) }
   }))
 }
 
@@ -153,7 +155,7 @@ const addMember = () => {
   const name = newMemberName.value.trim().replace(/\s+/g, ' ')
   if (!name) return
   const lower = name.toLowerCase()
-  if (members.value.some(m => m.trim().toLowerCase() === lower)) { showToast(`「${name}」已存在名單中`); return }
+  if (members.value.some(m => m.trim().toLowerCase() === lower)) { showToast(t('members.exists', { name })); return }
   members.value.push(name); newMemberName.value = ''
 }
 
@@ -162,23 +164,18 @@ const removeSystemUserProfile = async (uid) => {
   await deleteUserAccountViaFunction(uid)
 }
 
-const accountErrorMessage = (error) => {
-  if (error?.message === 'WALLET_BALANCE_NOT_ZERO') return '此成員錢包餘額不為 0，請先在儲值錢包調整為 0'
-  if (error?.message === 'CANNOT_DELETE_LAST_ADMIN') return '無法移除系統最後一位管理員'
-  if (error?.message === 'CANNOT_DEMOTE_SELF') return '不能取消自己的管理員權限'
-  return error?.message || '帳號操作失敗'
-}
+const accountErrorMessage = (error) => translateError(error, 'members.accountFailed')
 
 const removeMember = async (name) => {
   const adminInfo = adminMembers[name]
   const inviteInfo = inviteStatus[name]
   const uid = adminInfo?.uid || inviteInfo?.usedBy
   const confirmed = await confirmDialog({
-    title: '移除成員？',
-    message: `確定要移除「${name}」嗎？`,
-    detail: adminInfo?.uid ? '此成員已綁定帳號，將一併刪除 Firebase Authentication 帳號。' : '',
+    title: t('members.removeTitle'),
+    message: t('members.removeMessage', { name }),
+    detail: adminInfo?.uid ? t('members.removeDetail') : '',
     variant: 'danger',
-    confirmText: '移除',
+    confirmText: t('members.removeConfirm'),
   })
   if (!confirmed) return
 
@@ -186,15 +183,15 @@ const removeMember = async (name) => {
     if (uid) await removeSystemUserProfile(uid)
     if (inviteInfo && !uid) await deleteInviteCodesForMember(name)
     delete adminMembers[name]; delete inviteStatus[name]
-    if (uid) showToast('已移除系統會員資料與登入帳號', 'success')
-  } catch (err) { showToast('清理資料失敗: ' + accountErrorMessage(err)); return }
+    if (uid) showToast(t('members.removedAccount'), 'success')
+  } catch (err) { showToast(t('members.cleanupFailed', { message: accountErrorMessage(err) }), 'error'); return }
   members.value = members.value.filter(m => m !== name)
 }
 
 const saveMembers = async () => {
   isSavingMembers.value = true
-  try { await setDoc(doc(db, 'settings', 'members'), { names: members.value }); showToast(`成員名單已儲存（${members.value.length} 人）`) }
-  catch (err) { showToast('儲存失敗: ' + err.message, 'error') }
+  try { await setDoc(doc(db, 'settings', 'members'), { names: members.value }); showToast(t('members.saved', { count: members.value.length })) }
+  catch (err) { showToast(t('members.saveFailed', { message: translateError(err) }), 'error') }
   finally { isSavingMembers.value = false }
 }
 
@@ -202,9 +199,9 @@ const rebuildRoster = async () => {
   isRebuildingRoster.value = true
   try {
     const res = await rebuildMemberRosterViaFunction()
-    showToast(`代訂名單已重建（${res?.count ?? 0} 位成員）`, 'success')
+    showToast(t('members.rebuilt', { count: res?.count ?? 0 }), 'success')
   } catch (err) {
-    showToast('重建代訂名單失敗: ' + accountErrorMessage(err))
+    showToast(t('members.rebuildFailed', { message: accountErrorMessage(err) }), 'error')
   } finally {
     isRebuildingRoster.value = false
   }
@@ -216,26 +213,26 @@ const handleGenerateCode = async (memberName) => {
     const code = await generateInviteCode(memberName)
     const info = await getInviteCodeForMember(memberName)
     if (info) inviteStatus[memberName] = info
-    showToast(`邀請碼已產生：${code}`)
-  } catch (err) { showToast('產生邀請碼失敗: ' + err.message) }
+    showToast(t('members.generated', { code }))
+  } catch (err) { showToast(t('members.generateFailed', { message: translateError(err) }), 'error') }
   finally { generatingFor.value = '' }
 }
 
 const copyCode = async (code) => {
-  try { await navigator.clipboard.writeText(code); showToast('邀請碼已複製') }
-  catch { const t = document.createElement('textarea'); t.value = code; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t); showToast('邀請碼已複製') }
+  try { await navigator.clipboard.writeText(code); showToast(t('members.copied')) }
+  catch { const area = document.createElement('textarea'); area.value = code; document.body.appendChild(area); area.select(); document.execCommand('copy'); document.body.removeChild(area); showToast(t('members.copied')) }
 }
 
 const formatExpiry = (expiresAt) => {
   if (!expiresAt) return ''
   const ms = expiresAt.toMillis ? expiresAt.toMillis() : expiresAt
   const remainMs = ms - Date.now()
-  if (remainMs <= 0) return '即將過期'
+  if (remainMs <= 0) return t('members.expiringSoon')
   const mins = Math.ceil(remainMs / 60000)
-  if (mins < 60) return `${mins} 分鐘後到期`
+  if (mins < 60) return t('members.expiresMinutes', { count: mins })
   const hours = Math.ceil(remainMs / 3600000)
-  if (hours < 24) return `${hours} 小時後到期`
-  return `${Math.ceil(remainMs / 86400000)} 天後到期`
+  if (hours < 24) return t('members.expiresHours', { count: hours })
+  return t('members.expiresDays', { count: Math.ceil(remainMs / 86400000) })
 }
 
 const loadAdminStatus = async () => {
@@ -245,8 +242,8 @@ const loadAdminStatus = async () => {
   } catch (e) {
     // 這裡失敗時所有人都會被當成非管理員，畫面會少掉一整排按鈕。
     // 不講的話使用者只會覺得「權限突然不見了」。
-    console.error('載入管理員狀態失敗:', e)
-    showToast('讀取管理員狀態失敗，管理功能可能暫時不會出現', 'error')
+    console.error('[Members] admin status load failed', e)
+    showToast(t('members.adminLoadFailed'), 'error')
   }
 }
 
@@ -254,37 +251,36 @@ const getAdminCount = () => Object.values(adminMembers).filter(m => m.isAdmin).l
 
 const toggleAdmin = async (memberName) => {
   const info = adminMembers[memberName]
-  if (!info?.uid) { showToast('此成員尚未註冊帳號，無法設定管理員'); return }
+  if (!info?.uid) { showToast(t('members.notRegistered')); return }
   const newVal = !info.isAdmin
   if (!newVal) {
-    if (info.uid === userUid.value) { showToast('不能取消自己的管理員權限'); return }
-    if (getAdminCount() <= 1) { showToast('至少需要一位管理員，無法取消'); return }
+    if (info.uid === userUid.value) { showToast(t('members.cannotDemoteSelf')); return }
+    if (getAdminCount() <= 1) { showToast(t('members.lastAdmin')); return }
   }
-  const action = newVal ? '設為管理員' : '取消管理員權限'
   const confirmed = await confirmDialog({
-    title: `${action}？`,
-    message: `確定要將「${memberName}」${action}嗎？`,
-    confirmText: '確定',
+    title: t(newVal ? 'members.promoteTitle' : 'members.demoteTitle'),
+    message: t(newVal ? 'members.promoteMessage' : 'members.demoteMessage', { name: memberName }),
+    confirmText: t('common.confirm'),
   })
   if (!confirmed) return
   try {
     await setUserAdminStatusViaFunction(info.uid, newVal)
     adminMembers[memberName].isAdmin = newVal
-    showToast(newVal ? `已將「${memberName}」設為管理員` : `已取消「${memberName}」的管理員權限`)
-  } catch (err) { showToast('更新失敗: ' + accountErrorMessage(err)) }
+    showToast(t(newVal ? 'members.promoted' : 'members.demoted', { name: memberName }))
+  } catch (err) { showToast(t('members.updateFailed', { message: accountErrorMessage(err) }), 'error') }
 }
 
 const handleUnbind = async (memberName) => {
   const adminInfo = adminMembers[memberName]
   const inviteInfo = inviteStatus[memberName]
   const uid = adminInfo?.uid || inviteInfo?.usedBy
-  if (!uid && !inviteInfo?.id) { showToast('找不到此成員的帳號或邀請碼資訊'); return }
+  if (!uid && !inviteInfo?.id) { showToast(t('members.noAccountInfo')); return }
   const confirmed = await confirmDialog({
-    title: '解除帳號綁定？',
-    message: `確定要解除「${memberName}」的帳號綁定嗎？`,
-    detail: '將一併刪除 Firebase Authentication 帳號。',
+    title: t('members.unbindTitle'),
+    message: t('members.unbindMessage', { name: memberName }),
+    detail: t('members.unbindDetail'),
     variant: 'danger',
-    confirmText: '解除綁定',
+    confirmText: t('members.unbindConfirm'),
   })
   if (!confirmed) return
   unbindingFor.value = memberName
@@ -292,8 +288,8 @@ const handleUnbind = async (memberName) => {
     if (uid) await removeSystemUserProfile(uid)
     if (!uid) await deleteInviteCodesForMember(memberName)
     delete adminMembers[memberName]; delete inviteStatus[memberName]
-    showToast(`已解除「${memberName}」的帳號綁定並刪除登入帳號`, 'success')
-  } catch (err) { showToast('解除綁定失敗: ' + accountErrorMessage(err)) }
+    showToast(t('members.unbound', { name: memberName }), 'success')
+  } catch (err) { showToast(t('members.unbindFailed', { message: accountErrorMessage(err) }), 'error') }
   finally { unbindingFor.value = '' }
 }
 

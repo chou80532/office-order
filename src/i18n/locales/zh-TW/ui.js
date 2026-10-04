@@ -1,0 +1,21 @@
+export default {
+  loading: '正在載入…',
+  processing: '處理中…',
+  closeToast: '關閉通知',
+  offline: '目前離線，顯示快取資料',
+  selectPlaceholder: '請選擇',
+  selectEmpty: '目前沒有可選項目',
+  datePicker: {
+    pick: '選擇日期',
+    previousYear: '上一年',
+    nextYear: '下一年',
+    previousMonth: '上個月',
+    nextMonth: '下個月',
+    time: '時間',
+    hour: '小時',
+    minute: '分鐘',
+    thisMonth: '本月',
+    today: '今天',
+    apply: '套用',
+  },
+}

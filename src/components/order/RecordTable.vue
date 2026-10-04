@@ -9,7 +9,8 @@ import { ref, computed, onMounted, watch, toRef } from 'vue'
 import { useAuth } from '../../composables/useAuth'
 import { useToast } from '../../composables/useToast'
 import { useOrderHistory } from '../../composables/useOrderHistory'
-import { getTaipeiDayStartMs, formatMoney } from '../../utils/format'
+import { compareText, fromMinorUnits, getAppTimeZone, getFormatLocale, getTaipeiDayStartMs, formatMoney } from '../../utils/format'
+import { t } from '../../i18n'
 import {
   escapeCSV,
   formatTimeShort,
@@ -52,28 +53,28 @@ const inExportRange = (order) => {
 async function exportCSV() {
   if (csvExporting.value || !ready.value) return
   csvExporting.value = true
-  const headers = ['姓名', '店家', '品項', '備註', '金額', '免費', '時間']
+  const headers = ['name', 'store', 'meal', 'note', 'amount', 'free', 'time'].map(key => t(`history.csv.${key}`))
   try {
     const csvOrders = [...orders.value].filter(inExportRange).sort((a, b) => orderTime(a) - orderTime(b))
     const rows = csvOrders.map(o => [
       o.name, o.storeName, o.meal, o.note || '',
-      o.price, o.isFree ? '是' : '否', formatTimeSmart(orderTime(o) || Date.now())
+      fromMinorUnits(o.price), o.isFree ? t('common.yes') : t('common.no'), formatTimeSmart(orderTime(o) || Date.now())
     ])
     const totalAmount = csvOrders.reduce((sum, o) => o.isFree ? sum : sum + (Number(o.price) || 0), 0)
-    const totalsRow = ['合計', '', `${csvOrders.length} 筆`, '', totalAmount, '', '']
+    const totalsRow = [t('history.csv.total'), '', t('history.csv.count', { count: csvOrders.length }), '', fromMinorUnits(totalAmount), '', '']
     const csv = [headers, ...rows, totalsRow].map(r => r.map(escapeCSV).join(',')).join('\n')
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     const label = exportFrom.value === exportTo.value ? exportFrom.value : `${exportFrom.value}_${exportTo.value}`
-    a.download = `歷史訂單_${label}.csv`
+    a.download = t('history.csv.fileName', { label })
     a.click()
     URL.revokeObjectURL(url)
-    showToast('歷史訂單 CSV 已匯出', 'success')
+    showToast(t('history.exported'), 'success')
   } catch (error) {
     console.error('[RecordTable] CSV export failed:', error)
-    showToast('匯出歷史訂單失敗，請稍後再試', 'error')
+    showToast(t('history.exportFailed'), 'error')
   } finally {
     csvExporting.value = false
   }
@@ -108,7 +109,7 @@ const rangeStats = computed(() => {
 
 // ── Date grouping ─────────────────────────────
 const todayStr = new Date(getTaipeiDateRangeBounds(getLocalDateKey(), getLocalDateKey()).startMs)
-  .toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' })
+  .toLocaleDateString(getFormatLocale(), { timeZone: getAppTimeZone() })
 const isToday = (d) => d === todayStr
 
 const collapsedDates = ref([])
@@ -118,15 +119,15 @@ const groupedOrders = computed(() => {
 
   filteredOrders.value.forEach(order => {
     const d = new Date(order.timestamp)
-    const dateStr = d.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' })
-    const dayName = d.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei', weekday: 'short' })
-    // 用 en-US 取純數字，避免 zh-TW 帶出「15日」「7月」字尾
-    const dayNum = d.toLocaleDateString('en-US', { timeZone: 'Asia/Taipei', day: 'numeric' })
-    const monthLabel = d.toLocaleDateString('en-US', { timeZone: 'Asia/Taipei', month: 'numeric' })
-    const storeName = order.storeName || '未指定店家'
+    const dateStr = d.toLocaleDateString(getFormatLocale(), { timeZone: getAppTimeZone() })
+    const dayName = d.toLocaleDateString(getFormatLocale(), { timeZone: getAppTimeZone(), weekday: 'short' })
+    // 用 en-US 取純數字，避免 zh-TW 帶出「15日」字尾；月份名稱則跟著介面語言
+    const dayNum = d.toLocaleDateString('en-US', { timeZone: getAppTimeZone(), day: 'numeric' })
+    const monthLabel = d.toLocaleDateString(getFormatLocale(), { timeZone: getAppTimeZone(), month: 'short' })
+    const storeName = order.storeName || t('common.unknownStore')
 
     if (!groups[dateStr]) {
-      groups[dateStr] = { dateStr, dayName, dayNum, monthLabel: `${monthLabel}月`, dateObj: d, total: 0, names: new Set(), storesMap: {} }
+      groups[dateStr] = { dateStr, dayName, dayNum, monthLabel, dateObj: d, total: 0, names: new Set(), storesMap: {} }
     }
     if (!groups[dateStr].storesMap[storeName]) groups[dateStr].storesMap[storeName] = { storeName, total: 0, items: [] }
 
@@ -146,7 +147,7 @@ const groupedOrders = computed(() => {
       ...g,
       participantCount: g.names.size,
       stores: Object.values(g.storesMap)
-        .sort((a, b) => a.storeName.localeCompare(b.storeName, 'zh-TW'))
+        .sort((a, b) => compareText(a.storeName, b.storeName))
         .map(s => ({ ...s, items: s.items.sort((a, b) => b.timestamp - a.timestamp) }))
     }))
 })
@@ -154,7 +155,7 @@ const groupedOrders = computed(() => {
 const dayTitle = (dateGroup) => dateGroup.stores
   .map(store => store.storeName)
   .filter(Boolean)
-  .join('、')
+  .join(t('home.listSeparator'))
 
 const isSelf = (order) => String(order?.name || '').trim() === String(userDisplayName.value || '').trim()
 const toggleGroup = (dateStr) => {
@@ -203,49 +204,49 @@ defineExpose({ filteredOrders })
           v-model="localQuery"
           class="search-input"
           type="text"
-          placeholder="搜尋姓名、餐點、店家…"
+          :placeholder="t('history.searchPlaceholder')"
           autocomplete="off"
         />
-        <button v-if="localQuery" class="search-clear app-search-clear" @click="localQuery = ''" title="清除">✕</button>
-        <span v-if="localQuery" class="search-count">{{ filteredOrders.length }} 筆</span>
+        <button v-if="localQuery" class="search-clear app-search-clear" @click="localQuery = ''" :title="t('history.clear')">✕</button>
+        <span v-if="localQuery" class="search-count">{{ t('history.resultCount', { count: filteredOrders.length }) }}</span>
       </div>
       <div class="header-actions export-actions">
-        <AppDatePicker v-model="exportFrom" @change="rangeEndPicker?.openPicker()" :max="exportTo || lastHistoryDate" aria-label="歷史訂單起始日期" compact />
+        <AppDatePicker v-model="exportFrom" @change="rangeEndPicker?.openPicker()" :max="exportTo || lastHistoryDate" :aria-label="t('history.fromAria')" compact />
         <span class="date-sep">—</span>
-        <AppDatePicker ref="rangeEndPicker" v-model="exportTo" :min="exportFrom || undefined" :max="lastHistoryDate" aria-label="歷史訂單結束日期" compact />
-        <button type="button" class="toolbar-secondary-btn" :disabled="loading" @click="reload">重新整理</button>
+        <AppDatePicker ref="rangeEndPicker" v-model="exportTo" :min="exportFrom || undefined" :max="lastHistoryDate" :aria-label="t('history.toAria')" compact />
+        <button type="button" class="toolbar-secondary-btn" :disabled="loading" @click="reload">{{ t('history.refresh') }}</button>
         <button type="button" class="action-btn export-csv-btn" :disabled="csvExporting || !ready" @click="exportCSV">
-          {{ csvExporting ? '匯出中…' : '↓ 匯出 CSV' }}
+          {{ csvExporting ? t('history.exporting') : t('history.exportCsv') }}
         </button>
       </div>
     </div>
     </Teleport>
 
-    <LoadingState v-if="loading" title="正在載入所選區間的全部訂單…" description="正在整理日期群組與餐點明細，請稍候。" />
-    <StatusNotice v-else-if="loadError" alert :title="loadError" description="可能是連線中斷，重試一次通常就好。">
-      <button type="button" class="action-btn" @click="reload">重試</button>
+    <LoadingState v-if="loading" :title="t('history.loadingTitle')" :description="t('history.loadingText')" />
+    <StatusNotice v-else-if="loadError" alert :title="loadError" :description="t('history.errorText')">
+      <button type="button" class="action-btn" @click="reload">{{ t('common.retry') }}</button>
     </StatusNotice>
     <div v-else-if="ready" class="record-body">
       <!-- 區間 KPI 卡（設計稿 3） -->
-      <div class="record-kpis summary-strip summary-three" aria-label="區間團隊統計">
+      <div class="record-kpis summary-strip summary-three" :aria-label="t('history.kpiAria')">
         <div class="rk-card rk-orders summary-cell">
-          <span class="rk-label">區間團隊訂單</span>
-          <strong class="rk-value">{{ rangeStats.count.toLocaleString() }} <span class="rk-unit">筆</span></strong>
+          <span class="rk-label">{{ t('history.kpiOrders') }}</span>
+          <strong class="rk-value">{{ rangeStats.count.toLocaleString() }} <span class="rk-unit">{{ t('history.kpiOrdersUnit') }}</span></strong>
         </div>
         <div class="rk-card summary-cell">
-          <span class="rk-label">區間團隊花費</span>
+          <span class="rk-label">{{ t('history.kpiSpend') }}</span>
           <strong class="rk-value">{{ formatMoney(rangeStats.spend) }}</strong>
         </div>
         <div class="rk-card summary-cell">
-          <span class="rk-label">參與成員</span>
-          <strong class="rk-value">{{ rangeStats.people.toLocaleString() }} <span class="rk-unit">人</span></strong>
+          <span class="rk-label">{{ t('history.kpiPeople') }}</span>
+          <strong class="rk-value">{{ rangeStats.people.toLocaleString() }} <span class="rk-unit">{{ t('history.kpiPeopleUnit') }}</span></strong>
         </div>
       </div>
 
       <StatusNotice
         v-if="filteredOrders.length === 0"
-        :title="effectiveQuery ? `沒有符合「${effectiveQuery}」的訂單` : '此區間沒有任何訂單'"
-        :description="effectiveQuery ? '換個關鍵字，或清掉搜尋看整個區間。' : '換一段日期區間看看。'"
+        :title="effectiveQuery ? t('history.noMatch', { query: effectiveQuery }) : t('history.empty')"
+        :description="effectiveQuery ? t('history.noMatchText') : t('history.emptyText')"
       />
 
       <!-- 日期卡（設計稿 3：日期徽章＋店家＋參與人數＋當日合計，可收合） -->
@@ -258,17 +259,17 @@ defineExpose({ filteredOrders })
         <button type="button" class="day-head" @click="toggleGroup(dateGroup.dateStr)">
           <span class="day-badge" :class="{ today: isToday(dateGroup.dateStr) }">
             <strong>{{ dateGroup.dayNum }}</strong>
-            <small>{{ isToday(dateGroup.dateStr) ? '今日' : dateGroup.monthLabel }}</small>
+            <small>{{ isToday(dateGroup.dateStr) ? t('history.today') : dateGroup.monthLabel }}</small>
           </span>
           <span class="day-store-icon" aria-hidden="true">
             <i :class="['fas', getStoreInfo(dateGroup.stores[0]?.storeName).category === 'drink' ? 'fa-mug-hot' : 'fa-bowl-food']"></i>
           </span>
           <span class="day-info">
             <span class="day-title">{{ dayTitle(dateGroup) }}</span>
-            <small class="day-sub">{{ dateGroup.participantCount }} 人參與 ・ {{ dateGroup.dayName }}</small>
+            <small class="day-sub">{{ t('history.participants', { count: dateGroup.participantCount, day: dateGroup.dayName }) }}</small>
           </span>
           <span class="day-total">
-            <small>當日合計</small>
+            <small>{{ t('history.dayTotal') }}</small>
             <strong class="mono">{{ formatMoney(dateGroup.total) }}</strong>
           </span>
           <span class="day-chevron" aria-hidden="true">
@@ -287,7 +288,7 @@ defineExpose({ filteredOrders })
                 class="store-phone"
               >{{ getStoreInfo(storeGroup.storeName).phone }}</a>
               <!-- 金額欄跟下方明細列同寬、同樣靠右，兩者才會落在同一條基線上 -->
-              <span class="store-subhead-count">{{ storeGroup.items.length }} 筆</span>
+              <span class="store-subhead-count">{{ t('history.storeCount', { count: storeGroup.items.length }) }}</span>
               <span class="store-subhead-total">{{ formatMoney(storeGroup.total) }}</span>
               <span class="store-subhead-actions" aria-hidden="true"></span>
             </div>
@@ -300,7 +301,7 @@ defineExpose({ filteredOrders })
               :time="formatTimeShort(item.timestamp)"
             >
               <template #actions>
-                <button class="row-btn copy" @click="$emit('copy-order', item)" title="我也要！">+1</button>
+                <button class="row-btn copy" @click="$emit('copy-order', item)" :title="t('history.copy')">+1</button>
               </template>
             </OrderRow>
           </template>

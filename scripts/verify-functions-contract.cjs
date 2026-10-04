@@ -30,6 +30,13 @@ for (const collectionName of ['wallets', 'wallet_logs', 'cash_payments', 'cash_p
   const block = rules.slice(start, rules.indexOf('\n    }', start) + 6)
   assert.match(block, /allow create, update, delete: if false;/, `${collectionName} still permits client writes`)
 }
+for (const settingsDoc of ['system', 'setup', 'notifications']) {
+  const start = rules.indexOf(`match /settings/${settingsDoc} {`)
+  assert.notEqual(start, -1, `Missing rules block: settings/${settingsDoc}`)
+  const block = rules.slice(start, rules.indexOf('\n    }', start) + 6)
+  assert.match(block, /allow (read, )?write: if false;/, `settings/${settingsDoc} must be written only by Cloud Functions`)
+}
+assert.match(rules, /allow write: if isAdmin\(\) && !\(docId in \['system', 'setup', 'notifications'\]\);/, 'Generic settings rule must not reopen system settings to admins')
 const menuRulesStart = rules.indexOf('match /menu_images/')
 const menuRulesBlock = rules.slice(menuRulesStart, rules.indexOf('\n    }', menuRulesStart) + 6)
 assert.match(menuRulesBlock, /allow write: if isAdmin\(\);/, 'Menu prices are not restricted to admins')

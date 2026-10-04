@@ -37,6 +37,12 @@ const routes = [
     meta: { guest: true, noShell: true }
   },
   {
+    path: '/setup',
+    name: 'setup',
+    component: () => import('../views/SetupView.vue'),
+    meta: { guest: true, noShell: true }
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: { name: 'home' }
   }

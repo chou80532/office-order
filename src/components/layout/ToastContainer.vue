@@ -1,5 +1,6 @@
 <script setup>
 import { useToast } from '../../composables/useToast'
+import { t as translate } from '../../i18n'
 const { toasts, dismissToast, pauseToast, resumeToast } = useToast()
 
 const TYPE_ICON = {
@@ -34,7 +35,7 @@ function handleUndo(t) {
           <span class="toast-icon" aria-hidden="true"><i :class="['fas', iconFor(t)]"></i></span>
           <span class="toast-msg">{{ t.msg }}</span>
           <button v-if="t.undoLabel" type="button" class="undo-btn" @click="handleUndo(t)">{{ t.undoLabel }}</button>
-          <button type="button" class="close-btn" @click="dismissToast(t.id)" aria-label="關閉通知">×</button>
+          <button type="button" class="close-btn" @click="dismissToast(t.id)" :aria-label="translate('ui.closeToast')">×</button>
         </div>
       </TransitionGroup>
     </div>

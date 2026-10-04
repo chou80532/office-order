@@ -46,6 +46,15 @@ beforeEach(async () => {
       ['settings/daily', { serviceDate: '2026-09-26', activeStores: ['Store A'], freeStores: [] }],
       ['settings/members', { names: ['Alice', 'Bob'] }],
       ['settings/quickNotes', { groups: [] }],
+      ['settings/system', { timeZone: 'Asia/Taipei', paymentMethods: { wallet: true, cash: true }, proxyOrdering: 'all' }],
+      ['settings/setup', { completedByUid: 'admin' }],
+      ['settings/notifications', { webhookUrl: 'https://hooks.example.com/services/fictional', events: {}, reminderMinutes: 15 }],
+      ['allowance_runs/2026-09', { month: '2026-09', amount: 500, granted: 2 }],
+      ['retention_runs/2026-09-26', { cutoffDate: '2026-06-28', orders: 3 }],
+      ['allowance_grants/2026-09_alice', { uid: 'alice', month: '2026-09', amount: 500 }],
+      ['push_tokens/token-a', { uid: 'alice', token: 'fictional-device-token' }],
+      ['notification_state/2026-09-26', { storesOpened: 1 }],
+      ['member_roster/alice', { uid: 'alice', name: 'Alice', allowProxyOrders: false }],
       ['inviteCodes/invite-a', { memberName: 'New Member', used: false }],
       ['cash_payments/cash-a', { ownerUid: 'alice', amount: 120, status: 'pending' }],
       ['cash_payment_logs/cash-log-a', { ownerUid: 'alice', amount: 120 }],
@@ -141,6 +150,56 @@ test('admins can manage menus, settings and invitations but still cannot bypass 
   await assertFails(setDoc(doc(db, 'orders/admin-injected'), { ownerUid: 'admin' }))
   await assertFails(updateDoc(doc(db, 'wallets/alice'), { balance: 0 }))
   await assertFails(updateDoc(doc(db, 'users/alice'), { isAdmin: true }))
+})
+
+test('system settings and the setup marker are readable only as intended and never client-writable', async () => {
+  const member = testEnv.authenticatedContext('alice').firestore()
+  const admin = testEnv.authenticatedContext('admin').firestore()
+  const visitor = testEnv.unauthenticatedContext().firestore()
+  assert.equal((await assertSucceeds(getDoc(doc(member, 'settings/system')))).exists(), true)
+  await assertFails(getDoc(doc(visitor, 'settings/system')))
+  await assertFails(updateDoc(doc(member, 'settings/system'), { proxyOrdering: 'off' }))
+  // 管理員也必須經 updateSystemSettings 驗證，不可直接寫入或刪除。
+  await assertFails(updateDoc(doc(admin, 'settings/system'), { proxyOrdering: 'off' }))
+  await assertFails(setDoc(doc(admin, 'settings/system'), { timeZone: 'Invalid/Zone' }))
+  await assertFails(deleteDoc(doc(admin, 'settings/system')))
+  await assertFails(getDoc(doc(member, 'settings/setup')))
+  await assertFails(getDoc(doc(admin, 'settings/setup')))
+  await assertFails(deleteDoc(doc(admin, 'settings/setup')))
+})
+
+test('notification settings, run logs and server-only notification data are protected', async () => {
+  const member = testEnv.authenticatedContext('alice').firestore()
+  const admin = testEnv.authenticatedContext('admin').firestore()
+  // webhook 網址通常本身就是密鑰：一般成員不可讀，管理員可讀但只能經 Cloud Functions 修改。
+  await assertFails(getDoc(doc(member, 'settings/notifications')))
+  await assertSucceeds(getDoc(doc(admin, 'settings/notifications')))
+  await assertFails(setDoc(doc(admin, 'settings/notifications'), { webhookUrl: 'https://attacker.example.com/' }))
+  await assertFails(deleteDoc(doc(admin, 'settings/notifications')))
+
+  for (const path of ['allowance_runs/2026-09', 'retention_runs/2026-09-26']) {
+    await assertFails(getDoc(doc(member, path)))
+    await assertSucceeds(getDoc(doc(admin, path)))
+    await assertFails(setDoc(doc(admin, path), { forged: true }))
+  }
+
+  for (const path of ['allowance_grants/2026-09_alice', 'push_tokens/token-a', 'notification_state/2026-09-26']) {
+    await assertFails(getDoc(doc(member, path)))
+    await assertFails(getDoc(doc(admin, path)))
+    await assertFails(setDoc(doc(admin, path), { forged: true }))
+  }
+
+  // 代訂授權只能經 updateMyPreferences 寫入，成員不可直接改公開名單。
+  await assertSucceeds(getDoc(doc(member, 'member_roster/alice')))
+  await assertFails(updateDoc(doc(member, 'member_roster/alice'), { allowProxyOrders: true }))
+  await assertFails(updateDoc(doc(member, 'users/alice'), { allowProxyOrders: true }))
+})
+
+test('members cannot change the daily cutoff; admins manage it with the rest of the daily settings', async () => {
+  const member = testEnv.authenticatedContext('alice').firestore()
+  const admin = testEnv.authenticatedContext('admin').firestore()
+  await assertFails(updateDoc(doc(member, 'settings/daily'), { cutoff: { date: '2026-09-26', time: '' } }))
+  await assertSucceeds(updateDoc(doc(admin, 'settings/daily'), { cutoff: { date: '2026-09-26', time: '13:00' } }))
 })
 
 test('authenticated but unregistered accounts and unmatched private paths remain denied', async () => {

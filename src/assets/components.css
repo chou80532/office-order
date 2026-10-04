@@ -496,3 +496,65 @@ input, textarea, select { color: var(--ink); }
 }
 .mini-spinner-sm { width: 12px; height: 12px; border-width: 1.5px; }
 @media (prefers-reduced-motion: reduce) { .mini-spinner { animation: none; } }
+
+/* ── 系統設定欄位（首次設定頁與「系統設定」分頁共用） ──────────────────
+   只使用語意色彩 token：在紙卡（首次設定）與深色面板（.ops-surface）上都能讀。 */
+.sys-fields { display: flex; flex-direction: column; gap: 20px; }
+.sys-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.sys-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
+.sys-label {
+  padding: 0;
+  font-size: var(--text-micro);
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sys-input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1.5px solid var(--muted-line);
+  border-radius: var(--r-md);
+  background: var(--input-bg, var(--cream));
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  font-family: inherit;
+}
+.sys-input:focus { outline: none; border-color: var(--accent); }
+.sys-input:disabled { opacity: .6; cursor: not-allowed; }
+textarea.sys-input { resize: vertical; min-height: 84px; line-height: 1.5; }
+.sys-hint { font-size: var(--text-label); line-height: 1.55; color: var(--muted); }
+.sys-error { font-size: var(--text-label); color: var(--text-danger); }
+.sys-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+.sys-choice:has(input:checked) { border-color: var(--accent); }
+.sys-choice:has(input:disabled) { cursor: not-allowed; opacity: .6; }
+.sys-choice input { flex-shrink: 0; margin-top: 3px; accent-color: var(--accent); }
+.sys-choice span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sys-choice strong { font-size: var(--text-body); color: var(--text-primary); }
+.sys-choice small { font-size: var(--text-label); line-height: 1.5; color: var(--muted); }
+.sys-money { display: flex; align-items: center; gap: 8px; }
+.sys-money-symbol { flex-shrink: 0; font-weight: 700; color: var(--muted); }
+.sys-secondary-btn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-label);
+  font-weight: 700;
+}
+.sys-secondary-btn:hover:not(:disabled) { border-color: var(--accent); }
+.sys-secondary-btn:disabled { opacity: .5; cursor: not-allowed; }

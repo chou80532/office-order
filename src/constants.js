@@ -2,33 +2,19 @@
 // 全域常數
 // ==========================================
 
-// 時間相關（毫秒）
-export const ORDERS_QUERY_WINDOW_MS = 14 * 24 * 60 * 60 * 1000   // 14 天
-export const CLEANUP_CUTOFF_MS = 30 * 24 * 60 * 60 * 1000        // 30 天
-export const LAST_ORDER_HINT_MS = 30 * 60 * 1000                  // 30 分鐘
-export const STATS_TIMEOUT_MS = 15000                              // 15 秒
+// 時間相關（毫秒）。金額上限與低餘額水位改由系統設定（settings/system.limits）決定。
 export const TOAST_DURATION_MS = 3000                              // 3 秒
 export const UNDO_DURATION_MS = 8000                               // 撤銷視窗（刪除）
 export const SUBMIT_UNDO_DURATION_MS = 30000                       // 撤銷視窗（送出）
-export const HEADER_TIME_INTERVAL_MS = 60000                       // 1 分鐘
-export const LOW_WALLET_BALANCE = 100                              // 低額提醒水位
-export const MAX_WALLET_TOP_UP = 10000                             // 單次儲值上限
 
 // 輸入限制
 export const MAX_NAME_LENGTH = 20
 export const MAX_MEAL_LENGTH = 100
-export const MAX_PRICE = 10000
 export const MAX_NOTE_LENGTH = 200
-export const MAX_ANNOUNCEMENT_LENGTH = 120
-export const MAX_MEMBER_NAME_LENGTH = 10
-export const MAX_GROUP_NAME_LENGTH = 10
-export const MAX_MENU_ITEM_NAME_LENGTH = 50
-export const MAX_MENU_ITEM_PRICE = 9999
 export const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024                 // 2MB
 
 // Confetti 預設
 export const CONFETTI_SUBMIT = { particleCount: 150, spread: 90, origin: { y: 0.65 } }
-export const CONFETTI_RANDOM = { particleCount: 80, spread: 70, origin: { y: 0.6 } }
 
 // 頭像色盤
 //
@@ -50,17 +36,6 @@ export const AVATAR_COLORS = [
   '#176E78', '#1E5FA9', '#534B95', '#864F96', '#913061'
 ]
 
-// 快捷備註預設分組
-export const DEFAULT_NOTE_GROUPS = [
-  { label: '冰量', icon: 'snowflake', notes: ['正常冰', '少冰', '微冰', '去冰'] },
-  { label: '甜度', icon: 'candy-cane', notes: ['正常糖', '半糖', '微糖', '無糖'] },
-  { label: '溫度', icon: 'temperature-high', notes: ['溫的', '熱的'] },
-  { label: '其他', icon: 'comment-dots', notes: ['不要豆芽菜', '不加蔥', '不加香菜'] }
-]
-
 // 邀請碼
 export const INVITE_CODE_LENGTH = 6
 export const INVITE_CODE_EXPIRY_MS = 60 * 60 * 1000  // 1 小時
-
-// 快速表情符號
-export const QUICK_EMOJIS = ['👍', '❤️', '😂', '😡', '👏', '🎉']

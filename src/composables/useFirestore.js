@@ -2,10 +2,22 @@
 // useFirestore — 統一 Firestore 即時監聽
 // ==========================================
 import { ref, computed, provide, inject } from 'vue'
-import { DEFAULT_NOTE_GROUPS } from '../constants'
-import { getLocalDateKey, getTodayBounds } from '../utils/format'
+import { defaultNoteGroups } from '../utils/defaultNoteGroups'
+import { compareText, getLocalDateKey, getTodayBounds, setAppCurrency, setAppTimeZone } from '../utils/format'
+import { setSystemLocale, t } from '../i18n'
+import { readStorage, writeStorage } from '../utils/storage'
+import { DEFAULT_SYSTEM_SETTINGS, normalizeSystemSettings } from '../utils/systemSettings'
 
 const FIRESTORE_KEY = Symbol('firestore')
+const SYSTEM_SETTINGS_CACHE_KEY = 'cachedSystemSettings'
+
+const readCachedSystemSettings = () => {
+  try {
+    return normalizeSystemSettings(JSON.parse(readStorage(SYSTEM_SETTINGS_CACHE_KEY, 'null')) || {})
+  } catch {
+    return normalizeSystemSettings()
+  }
+}
 let firestoreContextPromise
 
 const getFirestoreContext = () => {
@@ -28,7 +40,7 @@ const getStoreCreatedAt = (record) => {
   }
   return null
 }
-const compareZh = (a, b) => String(a || '').localeCompare(String(b || ''), 'zh-TW')
+const compareZh = (a, b) => compareText(a, b)
 const isMenuItem = (item) => item && typeof item.name === 'string' && item.name.trim()
 const normalizeStoreNames = (names) => Array.isArray(names)
   ? names.map(name => normalizeStoreName(name)).filter(Boolean)
@@ -71,6 +83,15 @@ export const createFirestore = (_authState = null) => {
     ;({ collection, onSnapshot, doc, query, where, orderBy } = context.firestoreApi)
   }
 
+  // 先套用上次載入的系統設定，避免首屏在設定送達前以預設時區計算「今天」。
+  const systemSettings = ref(readCachedSystemSettings())
+  const systemSettingsReady = ref(false)
+  // settings/daily.cutoff：管理員對「當天」收單時間的調整（{ date, time }）。
+  const dailyCutoff = ref(null)
+  setAppTimeZone(systemSettings.value.timeZone)
+  setAppCurrency(systemSettings.value.currency)
+  setSystemLocale(systemSettings.value.locale)
+
   const todayOrders = ref([])
   const diningDay = ref({ participants: {}, needs: {}, replacements: {} })
   const diningLoading = ref(true)
@@ -91,7 +112,7 @@ export const createFirestore = (_authState = null) => {
   const members = ref([])
   const membersReady = ref(false)
   const userProfiles = ref([])
-  const noteGroups = ref(structuredClone(DEFAULT_NOTE_GROUPS))
+  const noteGroups = ref(defaultNoteGroups(systemSettings.value.locale))
   const ordersLoading = ref(false)
   const menuLoading = ref(true)
   const firestoreError = ref(null)
@@ -119,10 +140,11 @@ export const createFirestore = (_authState = null) => {
       uid: profile.uid,
       hasAccount: true,
       email: profile.email || '',
+      allowProxyOrders: profile.allowProxyOrders === true,
     }))
-    const registeredNames = new Set(registered.map(member => member.name.toLocaleLowerCase('zh-TW')))
+    const registeredNames = new Set(registered.map(member => member.name.toLocaleLowerCase()))
     const pending = members.value
-      .filter(name => !registeredNames.has(String(name).trim().toLocaleLowerCase('zh-TW')))
+      .filter(name => !registeredNames.has(String(name).trim().toLocaleLowerCase()))
       .map(name => ({ name, uid: '', hasAccount: false, email: '' }))
     return [...registered, ...pending]
   })
@@ -178,6 +200,7 @@ export const createFirestore = (_authState = null) => {
     dailyStores.value = dailyStoresConfigured.value ? stores : []
     dailyFreeStores.value = dailyStoresConfigured.value ? freeStores : []
     dailyStoresError.value = ''
+    dailyCutoff.value = data?.cutoff && typeof data.cutoff === 'object' ? { ...data.cutoff } : null
     if (settled) dailyStoresLoading.value = false
   }
 
@@ -287,6 +310,7 @@ export const createFirestore = (_authState = null) => {
             uid: d.id,
             memberName: String(d.data().name || '').trim(),
             email: '',
+            allowProxyOrders: d.data().allowProxyOrders === true,
           }))
           .filter(user => user.memberName)
       },
@@ -356,12 +380,12 @@ export const createFirestore = (_authState = null) => {
           if (Array.isArray(data.groups) && data.groups.length > 0) {
             noteGroups.value = data.groups
           } else if (Array.isArray(data.notes) && data.notes.length > 0) {
-            noteGroups.value = [{ label: '備註', icon: 'comment-dots', notes: data.notes }]
+            noteGroups.value = [{ label: t('data.legacyNotesGroup'), icon: 'comment-dots', notes: data.notes }]
           } else {
-            noteGroups.value = structuredClone(DEFAULT_NOTE_GROUPS)
+            noteGroups.value = defaultNoteGroups(systemSettings.value.locale)
           }
         } else {
-          noteGroups.value = structuredClone(DEFAULT_NOTE_GROUPS)
+          noteGroups.value = defaultNoteGroups(systemSettings.value.locale)
         }
       },
       (error) => { console.error('[Firestore] quickNotes error:', error) }
@@ -426,6 +450,20 @@ export const createFirestore = (_authState = null) => {
     )
   }
 
+  const applySystemSettings = (data) => {
+    const next = normalizeSystemSettings(data)
+    systemSettings.value = next
+    systemSettingsReady.value = true
+    writeStorage(SYSTEM_SETTINGS_CACHE_KEY, JSON.stringify(next))
+    setAppCurrency(next.currency)
+    setSystemLocale(next.locale)
+    // 時區改變時「今天」的範圍跟著改變：重新判斷今日店家，並重啟今日訂單與用餐名單監聽。
+    if (setAppTimeZone(next.timeZone)) {
+      refreshDailyStoreDate()
+      refreshTodayOrdersListener()
+    }
+  }
+
   // 啟動所有監聽
   const startListeners = async () => {
     listenersRequested = true
@@ -444,6 +482,16 @@ export const createFirestore = (_authState = null) => {
       await prepareFirestore()
       if (!listenersRequested || unsubscribes.length > 0) return
 
+      // 系統設定（時區、付款方式、代訂規則）；文件不存在時套用預設值。
+      unsubscribes.push(onSnapshot(
+        doc(db, 'settings', 'system'),
+        (snap) => applySystemSettings(snap.exists() ? snap.data() : {}),
+        (error) => {
+          console.error('[Firestore] system settings error:', error)
+          systemSettingsReady.value = true
+        }
+      ))
+
       // 今日訂單：只保留即時監聽今天需要的資料，歷史資料由各功能按需 getDocs。
       refreshTodayOrdersListener()
 
@@ -460,7 +508,7 @@ export const createFirestore = (_authState = null) => {
           syncMenuListener()
           return
         }
-        dailyStoresError.value = '連線逾時，請確認網路後重新整理'
+        dailyStoresError.value = t('data.firestore.timeout')
         dailyStoresLoading.value = false
         menuLoading.value = false
       }, 8_000)
@@ -494,7 +542,7 @@ export const createFirestore = (_authState = null) => {
           dailyFreeStores.value = []
           dailyActiveStoreCount.value = 0
           dailyStoreLegacyDate.value = ''
-          dailyStoresError.value = error.message || '讀取今日店家設定失敗'
+          dailyStoresError.value = error.message || t('data.firestore.dailyFailed')
           dailyStoresLoading.value = false
           syncMenuListener()
         }
@@ -504,7 +552,7 @@ export const createFirestore = (_authState = null) => {
       syncQuickNotesListener()
     } catch (error) {
       console.error('[Firestore] initialization error:', error)
-      firestoreError.value = error.message || '資料庫初始化失敗'
+      firestoreError.value = error.message || t('data.firestore.initFailed')
       dailyStoresError.value = firestoreError.value
       ordersLoading.value = false
       menuLoading.value = false
@@ -558,7 +606,7 @@ export const createFirestore = (_authState = null) => {
     members.value = []
     membersReady.value = false
     userProfiles.value = []
-    noteGroups.value = structuredClone(DEFAULT_NOTE_GROUPS)
+    noteGroups.value = defaultNoteGroups(systemSettings.value.locale)
     ordersLoading.value = false
     menuLoading.value = true
     fullMenuConsumerCount = 0
@@ -567,6 +615,7 @@ export const createFirestore = (_authState = null) => {
   }
 
   const state = {
+    systemSettings, systemSettingsReady, dailyCutoff,
     diningDay, diningLoading, diningError,
     todayOrders, rawMenuData, dailyStores, dailyFreeStores, dailyStoresConfigured, dailyStoresLoading, dailyStoresReady,
     dailySettingsExists, dailyStoreDateMatched, dailyStoreServiceDate, dailyStoreLegacyDate, dailyStoreTodayKey,
@@ -588,12 +637,13 @@ export const useFirestore = () => {
   if (!injected) {
     console.warn('[useFirestore] 未找到 provider，請確認 App.vue 已呼叫 createFirestore()')
     return {
+      systemSettings: ref({ ...DEFAULT_SYSTEM_SETTINGS }), systemSettingsReady: ref(true), dailyCutoff: ref(null),
       diningDay: ref({ participants: {}, needs: {}, replacements: {} }), diningLoading: ref(false), diningError: ref(''),
       todayOrders: ref([]), rawMenuData: ref([]), dailyStores: ref([]), dailyFreeStores: ref([]), dailyStoresConfigured: ref(false),
       dailyStoresLoading: ref(false), dailyStoresReady: ref(true), dailySettingsExists: ref(false),
       dailyStoreDateMatched: ref(false), dailyStoreServiceDate: ref(''), dailyStoreLegacyDate: ref(''), dailyStoreTodayKey: ref(getLocalDateKey()),
       dailyActiveStoreCount: ref(0), dailyStoresError: ref(''),
-      members: ref([]), membersReady: ref(false), membersWithUid: computed(() => []), userProfiles: ref([]), noteGroups: ref(DEFAULT_NOTE_GROUPS),
+      members: ref([]), membersReady: ref(false), membersWithUid: computed(() => []), userProfiles: ref([]), noteGroups: ref(defaultNoteGroups()),
       allStores: computed(() => []),
       ordersLoading: ref(false), menuLoading: ref(false), firestoreError: ref(null),
       startListeners: () => {}, stopListeners: () => {}, refreshDailyStoreDate: () => {}, refreshTodayOrdersListener: () => {},

@@ -121,11 +121,40 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // 其他系統設定仍限管理員修改
-    match /settings/{docId} {
+    // 系統設定（時區、付款方式、代訂規則）與首次設定標記：只能經 Cloud Functions 驗證後寫入。
+    match /settings/system {
       allow read: if isRegistered();
-      allow write: if isAdmin();
+      allow write: if false;
     }
+
+    match /settings/setup {
+      allow read, write: if false;
+    }
+
+    // 通知設定含 webhook 網址（通常本身就是密鑰），只有管理員能讀，寫入需經 Cloud Functions 驗證。
+    match /settings/notifications {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // 其他系統設定仍限管理員修改。多個 match 只要任一允許就放行，所以這裡要排除上面三份文件。
+    match /settings/{docId} {
+      allow read: if isRegistered() && !(docId in ['setup', 'notifications']);
+      allow write: if isAdmin() && !(docId in ['system', 'setup', 'notifications']);
+    }
+
+    // 每月補助與資料保留的執行紀錄：管理員可查看，只能由 Cloud Functions 寫入。
+    match /allowance_runs/{month} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /retention_runs/{date} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // push_tokens、notification_state、allowance_grants 沒有對應規則，用戶端一律無法存取。
 
     // 投票功能已移除，舊資料一律禁止存取。
     match /dish_reactions/{docId} {

@@ -36,11 +36,11 @@ describe('選項群組整理', () => {
     expect(groups[0].choices[0].price).toBe(0)
   })
 
-  it('加價轉成 0–9999 的整數', () => {
+  it('加價轉成不為負的整數，壞掉的超大值會被擋下', () => {
     const [group] = normalizeOptionGroups([{ label: '加點', choices: [
-      { name: '字串價', price: '20' }, { name: '負數', price: -5 }, { name: '爆表', price: 99999 }, { name: '空的' },
+      { name: '字串價', price: '20' }, { name: '負數', price: -5 }, { name: '爆表', price: 1e12 }, { name: '空的' },
     ] }])
-    expect(group.choices.map(c => c.price)).toEqual([20, 0, 9999, 0])
+    expect(group.choices.map(c => c.price)).toEqual([20, 0, 100_000_000, 0])
   })
 
   it('serialize 之後可以安全寫進 Firestore', () => {

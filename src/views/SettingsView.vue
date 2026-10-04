@@ -1,12 +1,14 @@
 <script setup>
 import { h, ref, computed, watch, defineAsyncComponent } from 'vue'
 import { useSettingsTab } from '../composables/useSettingsTab'
+import { useFirestore } from '../composables/useFirestore'
+import { t } from '../i18n'
 import TopHeader from '../components/layout/TopHeader.vue'
 
 // 各面板改用 defineAsyncComponent 的 loadingComponent 顯示載入中，
 // 不用 Suspense：Suspense 與 Transition(out-in) 併用時 fallback 離場會卡住，面板永遠不進場。
 const PanelLoading = {
-  render: () => h('div', { class: 'panel-loading' }, [h('span', { class: 'panel-spinner' }), ' 載入中…'])
+  render: () => h('div', { class: 'panel-loading' }, [h('span', { class: 'panel-spinner' }), ` ${t('settings.panelLoading')}`])
 }
 const asyncPanel = (loader) => defineAsyncComponent({ loader, loadingComponent: PanelLoading, delay: 120 })
 
@@ -16,19 +18,36 @@ const QuickNotesPanel      = asyncPanel(() => import('../components/settings/Qui
 const OldFileCleanupPanel  = asyncPanel(() => import('../components/settings/OldFileCleanupPanel.vue'))
 const WalletManagementPanel = asyncPanel(() => import('../components/settings/WalletManagementPanel.vue'))
 const CashPaymentPanel = asyncPanel(() => import('../components/settings/CashPaymentPanel.vue'))
+const SystemSettingsPanel = asyncPanel(() => import('../components/settings/SystemSettingsPanel.vue'))
 
 const { activeTab } = useSettingsTab()
+const { systemSettings } = useFirestore()
 
-const menuItems = [
-  { id: 'stores',  icon: 'fa-store',           label: '店家管理', shortLabel: '店家', description: '維護店家資料、菜單品項與菜單圖片' },
-  { id: 'members', icon: 'fa-users',           label: '成員名單', shortLabel: '成員', description: '管理成員名單、帳號與管理員權限' },
-  { id: 'wallet',  icon: 'fa-wallet',          label: '儲值錢包', shortLabel: '錢包', description: '成員錢包儲值、調整與異動紀錄' },
-  { id: 'cash',    icon: 'fa-money-bill-wave', label: '現金收款', shortLabel: '現金', description: '追蹤現金應收款項並標記已收' },
-  { id: 'notes',   icon: 'fa-pen-to-square',   label: '快捷備註', shortLabel: '備註', description: '設定點餐時可快速選用的備註選項' },
-  { id: 'cleanup', icon: 'fa-trash-can',       label: '舊檔清理', shortLabel: '清理', description: '清理過期的菜單圖片與舊資料，釋放空間' },
+const allMenuItems = [
+  { id: 'stores',  icon: 'fa-store' },
+  { id: 'members', icon: 'fa-users' },
+  { id: 'wallet',  icon: 'fa-wallet' },
+  { id: 'cash',    icon: 'fa-money-bill-wave' },
+  { id: 'notes',   icon: 'fa-pen-to-square' },
+  { id: 'cleanup', icon: 'fa-trash-can' },
+  { id: 'system',  icon: 'fa-sliders' },
 ]
 
-const currentMenuItem = computed(() => menuItems.find(m => m.id === activeTab.value) || menuItems[0])
+// 停用的付款方式不顯示對應的管理分頁。
+const menuItems = computed(() => allMenuItems
+  .filter(item => (item.id !== 'wallet' || systemSettings.value.paymentMethods.wallet)
+    && (item.id !== 'cash' || systemSettings.value.paymentMethods.cash))
+  .map(item => ({
+    ...item,
+    label: t(`settings.tabs.${item.id}.label`),
+    shortLabel: t(`settings.tabs.${item.id}.short`),
+    description: t(`settings.tabs.${item.id}.description`),
+  })))
+
+const currentMenuItem = computed(() => menuItems.value.find(m => m.id === activeTab.value) || menuItems.value[0])
+watch(menuItems, (items) => {
+  if (!items.some(item => item.id === activeTab.value)) activeTab.value = items[0].id
+}, { immediate: true })
 
 const storeSearch = ref('')
 watch(activeTab, () => { storeSearch.value = '' })
@@ -42,14 +61,14 @@ watch(activeTab, () => { storeSearch.value = '' })
           <input
             v-model="storeSearch"
             class="header-search"
-            placeholder="搜尋店家名稱..."
+            :placeholder="t('settings.storeSearchPlaceholder')"
             @keyup.escape="storeSearch = ''"
           />
           <button
             v-if="storeSearch"
             type="button"
             class="header-search-clear app-search-clear"
-            aria-label="清除搜尋"
+            :aria-label="t('common.clearSearch')"
             @click="storeSearch = ''"
           ><i class="fas fa-xmark" aria-hidden="true"></i></button>
         </div>
@@ -85,6 +104,7 @@ watch(activeTab, () => { storeSearch.value = '' })
             <CashPaymentPanel v-else-if="activeTab === 'cash'" toolbar-target="#cash-toolbar-target" />
             <QuickNotesPanel      v-else-if="activeTab === 'notes'" />
             <OldFileCleanupPanel  v-else-if="activeTab === 'cleanup'" />
+            <SystemSettingsPanel  v-else-if="activeTab === 'system'" />
           </KeepAlive>
         </Transition>
       </div>

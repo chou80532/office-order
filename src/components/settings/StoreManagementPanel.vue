@@ -4,9 +4,9 @@
     <div class="panel-toolbar">
       <div class="toolbar-top">
         <div class="toolbar-stats">
-          共 {{ groupedStores.length }} 間店家
+          {{ t('stores.totalStores', { count: groupedStores.length }) }}
           <span class="stats-dot" aria-hidden="true">・</span>
-          今日開放 {{ openTodayCount }} 間
+          {{ t('stores.openToday', { count: openTodayCount }) }}
         </div>
         <div class="toolbar-top-actions">
           <button
@@ -17,39 +17,43 @@
             @click="filtersOpen = !filtersOpen"
           >
             <i class="fas fa-filter" aria-hidden="true"></i>
-            篩選 / 排序
+            {{ t('stores.filterSort') }}
             <span v-if="activeFilterCount" class="filter-count-badge">{{ activeFilterCount }}</span>
             <i class="fas fa-chevron-down filter-chevron" :class="{ open: filtersOpen }" aria-hidden="true"></i>
           </button>
+          <button type="button" class="filter-toggle-btn" @click="showTransfer = true">
+            <i class="fas fa-file-export" aria-hidden="true"></i>
+            {{ t('stores.transfer') }}
+          </button>
           <button type="button" class="btn btn-primary add-store-btn" @click="showQuickAdd = !showQuickAdd">
-            <i class="fas fa-plus" aria-hidden="true"></i> 新增店家
+            <i class="fas fa-plus" aria-hidden="true"></i> {{ t('stores.addStore') }}
           </button>
         </div>
       </div>
       <div v-show="filtersOpen" class="toolbar-controls">
-        <select v-model="categoryFilter" class="toolbar-select" aria-label="分類篩選">
-          <option value="all">全部分類</option>
-          <option value="lunch">午餐</option>
-          <option value="drink">飲料</option>
+        <select v-model="categoryFilter" class="toolbar-select" :aria-label="t('stores.categoryFilter')">
+          <option value="all">{{ t('stores.allCategories') }}</option>
+          <option value="lunch">{{ t('common.storeCategory.lunch') }}</option>
+          <option value="drink">{{ t('common.storeCategory.drink') }}</option>
         </select>
-        <select v-model="attentionFilter" class="toolbar-select" aria-label="待處理篩選">
-          <option value="all">全部狀態</option>
-          <option value="no-image">沒有圖片</option>
-          <option value="failed">圖片載入失敗（已偵測）</option>
-          <option value="no-menu">未設定智慧菜單</option>
+        <select v-model="attentionFilter" class="toolbar-select" :aria-label="t('stores.attentionFilter')">
+          <option value="all">{{ t('stores.allStatuses') }}</option>
+          <option value="no-image">{{ t('stores.noImage') }}</option>
+          <option value="failed">{{ t('stores.failedImage') }}</option>
+          <option value="no-menu">{{ t('stores.noMenu') }}</option>
         </select>
-        <select v-model="sortState.key" class="toolbar-select" aria-label="排序方式" title="今日開放的店家固定排在最前面，其次才依此排序方式">
-          <option value="menuUpdatedAt">最近更新</option>
-          <option value="createdAt">最近加入</option>
-          <option value="name">店家名稱</option>
-          <option value="category">分類</option>
-          <option value="images">圖片數</option>
+        <select v-model="sortState.key" class="toolbar-select" :aria-label="t('stores.sortBy')" :title="t('stores.sortHint')">
+          <option value="menuUpdatedAt">{{ t('stores.sortMenuUpdated') }}</option>
+          <option value="createdAt">{{ t('stores.sortCreated') }}</option>
+          <option value="name">{{ t('stores.sortName') }}</option>
+          <option value="category">{{ t('stores.sortCategory') }}</option>
+          <option value="images">{{ t('stores.sortImages') }}</option>
         </select>
         <button
           type="button"
           class="sort-dir-btn"
-          :title="sortState.direction === 'asc' ? '目前：由小到大' : '目前：由大到小'"
-          :aria-label="sortState.direction === 'asc' ? '切換為由大到小' : '切換為由小到大'"
+          :title="sortState.direction === 'asc' ? t('stores.sortAscNow') : t('stores.sortDescNow')"
+          :aria-label="sortState.direction === 'asc' ? t('stores.sortToDesc') : t('stores.sortToAsc')"
           @click="sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc'"
         >
           <i :class="['fas', sortState.direction === 'asc' ? 'fa-arrow-up-short-wide' : 'fa-arrow-down-wide-short']" aria-hidden="true"></i>
@@ -61,52 +65,52 @@
     <div v-show="showQuickAdd" class="quick-add-section">
       <div class="section-label">
         <i class="fas fa-plus-circle"></i>
-        <span>快速新增店家</span>
+        <span>{{ t('stores.quickAddTitle') }}</span>
       </div>
       <div class="quick-add-grid">
         <div class="form-item" style="flex:0.7;min-width:90px">
-          <label>分類*</label>
+          <label>{{ t('stores.categoryRequired') }}</label>
           <select v-model="quickAddForm.category">
-            <option value="lunch">午餐</option>
-            <option value="drink">飲料</option>
+            <option value="lunch">{{ t('common.storeCategory.lunch') }}</option>
+            <option value="drink">{{ t('common.storeCategory.drink') }}</option>
           </select>
         </div>
         <div class="form-item" style="flex:1.2;min-width:130px">
-          <label>店家名稱*</label>
-          <input type="text" v-model="quickAddForm.name" placeholder="如：50嵐">
+          <label>{{ t('stores.nameRequired') }}</label>
+          <input type="text" v-model="quickAddForm.name" :placeholder="t('stores.namePlaceholder')">
         </div>
         <div class="form-item" style="flex:1;min-width:120px">
-          <label>電話</label>
-          <input type="tel" v-model="quickAddForm.phone" @input="formatPhone('quickAddForm')" placeholder="如：04-1234567">
+          <label>{{ t('stores.phone') }}</label>
+          <input type="tel" v-model="quickAddForm.phone" @input="formatPhone('quickAddForm')" :placeholder="t('stores.phonePlaceholder')">
         </div>
         <div class="form-item" style="flex:1.5;min-width:150px">
-          <label>地址</label>
-          <input type="text" v-model="quickAddForm.address" placeholder="如：台中市...">
+          <label>{{ t('stores.address') }}</label>
+          <input type="text" v-model="quickAddForm.address" :placeholder="t('stores.addressPlaceholder')">
         </div>
         <div class="form-item" style="flex:1.3;min-width:160px">
-          <label>菜單圖片（選填）</label>
+          <label>{{ t('stores.menuImageOptional') }}</label>
           <div class="file-input-group">
             <div class="file-action-box">
-              <button type="button" class="fab-btn" @click="promptQuickAddUrl" title="貼上網址"><i class="fas fa-link"></i></button>
-              <button type="button" class="fab-btn" @click="$refs.quickAddFileInput.click()" title="上傳圖片"><i class="fas fa-upload"></i></button>
+              <button type="button" class="fab-btn" @click="promptQuickAddUrl" :title="t('stores.pasteUrl')" :aria-label="t('stores.pasteUrl')"><i class="fas fa-link"></i></button>
+              <button type="button" class="fab-btn" @click="$refs.quickAddFileInput.click()" :title="t('stores.uploadImage')" :aria-label="t('stores.uploadImage')"><i class="fas fa-upload"></i></button>
             </div>
             <input type="file" ref="quickAddFileInput" accept="image/*" @change="handleQuickAddFile" style="display:none">
-            <div class="file-status">{{ quickAddFileStatus }}</div>
+            <div class="file-status">{{ quickAddFileStatus || t('stores.noFile') }}</div>
           </div>
         </div>
         <div class="form-item btn-item">
           <button class="btn btn-primary btn-add" @click="submitQuickAdd" :disabled="isQuickAdding">
             <span v-if="isQuickAdding" class="mini-spinner"></span>
             <template v-else><i class="fas fa-plus"></i></template>
-            新增
+            {{ t('stores.add') }}
           </button>
         </div>
       </div>
     </div>
 
     <!-- 店家卡片網格（設計稿 3） -->
-    <StatusNotice v-if="groupedStores.length === 0" title="目前沒有任何店家資料" description="使用上方「新增店家」建立第一間店家。" />
-    <StatusNotice v-else-if="filteredStores.length === 0" :title="`找不到符合「${props.searchQuery}」的店家`" description="請調整搜尋關鍵字或篩選條件。" />
+    <StatusNotice v-if="groupedStores.length === 0" :title="t('stores.emptyTitle')" :description="t('stores.emptyText')" />
+    <StatusNotice v-else-if="filteredStores.length === 0" :title="t('stores.noMatchTitle', { query: props.searchQuery })" :description="t('stores.noMatchText')" />
     <div v-else class="store-grid">
       <article
         v-for="store in filteredStores"
@@ -126,8 +130,8 @@
             type="button"
             class="row-thumb"
             :class="{ 'is-empty': !firstImage(store) }"
-            :aria-label="`${store.name} 的菜單圖片，共 ${validImageCount(store)} 張`"
-            :title="validImageCount(store) ? '檢視菜單' : '編輯店家'"
+            :aria-label="t('stores.thumbAria', { store: store.name, count: validImageCount(store) })"
+            :title="validImageCount(store) ? t('stores.viewMenu') : t('stores.editStore')"
             @click="openSmartEditor(store, firstImage(store)?.id)"
           >
             <img v-if="firstImage(store)" :src="firstImage(store).url" @error="handleMenuImageError(firstImage(store), store)" alt="" width="40" height="40" loading="lazy" decoding="async">
@@ -139,22 +143,22 @@
             <div class="row-line1">
               <h3 class="card-name" :title="store.name">{{ store.name }}</h3>
               <span class="row-cell row-cell-mid">
-                <span v-if="isStoreOpenToday(store.name)" class="today-flag">今日開放</span>
+                <span v-if="isStoreOpenToday(store.name)" class="today-flag">{{ t('stores.todayFlag') }}</span>
               </span>
               <span class="row-cell row-cell-end">
                 <span :class="['cat-badge', store.category === 'lunch' ? 'badge-lunch' : 'badge-drink']">
-                  {{ store.category === 'lunch' ? '午餐' : '飲料' }}
+                  {{ t(store.category === 'lunch' ? 'common.storeCategory.lunch' : 'common.storeCategory.drink') }}
                 </span>
               </span>
             </div>
             <div class="row-line2">
-              <span class="meta-item meta-phone" :class="{ 'is-blank': !store.phone }">{{ store.phone || '未填電話' }}</span>
+              <span class="meta-item meta-phone" :class="{ 'is-blank': !store.phone }">{{ store.phone || t('stores.noPhone') }}</span>
               <span class="row-cell row-cell-mid">
-                <span class="meta-item meta-address" :class="{ 'is-blank': !store.address }" :title="store.address">{{ store.address || '未填地址' }}</span>
+                <span class="meta-item meta-address" :class="{ 'is-blank': !store.address }" :title="store.address">{{ store.address || t('stores.noAddress') }}</span>
               </span>
               <span class="row-cell row-cell-end">
                 <span class="meta-item meta-menu" :class="{ 'is-blank': !validImageCount(store) }">
-                  {{ validImageCount(store) ? `菜單 ${formatDateShort(store.menuUpdatedAtTs)}` : '尚無菜單圖片' }}
+                  {{ validImageCount(store) ? t('stores.menuDate', { date: formatDateShort(store.menuUpdatedAtTs) }) : t('stores.noMenuImage') }}
                 </span>
               </span>
             </div>
@@ -166,17 +170,17 @@
               class="open-toggle"
               role="switch"
               :aria-checked="isStoreOpenToday(store.name)"
-              :aria-label="`${store.name} 今日開放點餐`"
+              :aria-label="t('stores.openToggleAria', { store: store.name })"
               :disabled="togglingStoreName === store.name"
-              :title="isStoreOpenToday(store.name) ? '今日開放中，點擊關閉' : '未開放，點擊開放今日點餐'"
+              :title="isStoreOpenToday(store.name) ? t('stores.openToggleOn') : t('stores.openToggleOff')"
               @click="toggleOpenToday(store)"
             >
               <span class="toggle-knob" aria-hidden="true"></span>
             </button>
 
-            <button type="button" class="card-btn primary" @click="openSmartEditor(store)" title="編輯店家資料與智慧點餐">
-              編輯店家
-              <span v-if="store.menuItems?.length" class="menu-count-badge" :aria-label="`已設定 ${store.menuItems.length} 項餐點`">{{ store.menuItems.length }}</span>
+            <button type="button" class="card-btn primary" @click="openSmartEditor(store)" :title="t('stores.editHint')">
+              {{ t('stores.editStore') }}
+              <span v-if="store.menuItems?.length" class="menu-count-badge" :aria-label="t('stores.menuCountAria', { count: store.menuItems.length })">{{ store.menuItems.length }}</span>
             </button>
 
           </div>
@@ -197,43 +201,45 @@
     >
       <template #header-actions="{ save, isSaving }">
             <div class="store-edit-actions">
-              <button type="button" class="btn store-delete-btn" @click="deleteWholeStore(editorStore)"><i class="fas fa-trash-alt"></i> 刪除店家</button>
+              <button type="button" class="btn store-delete-btn" @click="deleteWholeStore(editorStore)"><i class="fas fa-trash-alt"></i> {{ t('stores.deleteStore') }}</button>
               <span class="store-action-divider" aria-hidden="true">｜</span>
-              <button type="button" class="btn btn-secondary" :disabled="duplicatingStoreName === editorStore.name" @click="duplicateStore(editorStore)"><i class="fas fa-copy"></i> 複製店家</button>
-              <button type="button" class="btn btn-primary" @click="save" :disabled="isSaving"><i class="fas fa-check" aria-hidden="true"></i> 儲存資料</button>
+              <button type="button" class="btn btn-secondary" :disabled="duplicatingStoreName === editorStore.name" @click="duplicateStore(editorStore)"><i class="fas fa-copy"></i> {{ t('stores.duplicateStore') }}</button>
+              <button type="button" class="btn btn-primary" @click="save" :disabled="isSaving"><i class="fas fa-check" aria-hidden="true"></i> {{ t('stores.saveData') }}</button>
             </div>
       </template>
       <template #store-details>
           <div class="store-details-form">
             <div class="edit-field">
-              <label>分類</label>
+              <label>{{ t('stores.category') }}</label>
               <select v-model="editForm.category" class="edit-input">
-                <option value="lunch">午餐</option>
-                <option value="drink">飲料</option>
+                <option value="lunch">{{ t('common.storeCategory.lunch') }}</option>
+                <option value="drink">{{ t('common.storeCategory.drink') }}</option>
               </select>
             </div>
             <div class="edit-field">
-              <label>店家名稱</label>
+              <label>{{ t('stores.name') }}</label>
               <input type="text" v-model="editForm.name" class="edit-input">
             </div>
             <div class="edit-field">
-              <label>電話</label>
-              <input type="tel" v-model="editForm.phone" @input="formatPhone('editForm')" class="edit-input">
+              <label>{{ t('stores.phone') }}</label>
+              <input type="tel" v-model="editForm.phone" @input="formatPhone('editForm')" class="edit-input" :placeholder="t('stores.phonePlaceholder')">
             </div>
             <div class="edit-field">
-              <label>地址</label>
-              <input type="text" v-model="editForm.address" class="edit-input">
+              <label>{{ t('stores.address') }}</label>
+              <input type="text" v-model="editForm.address" class="edit-input" :placeholder="t('stores.addressPlaceholder')">
             </div>
           </div>
       </template>
       <template #image-actions="{ image }">
         <span class="image-action-divider" aria-hidden="true"></span>
-        <button type="button" class="image-toolbar-btn" :disabled="!image?.url" @click="copyImageUrl(image.url)" title="複製目前圖片網址" aria-label="複製目前圖片網址"><i class="fas fa-copy"></i></button>
-        <button type="button" class="image-toolbar-btn" @click="addExtraImageUrl(editorStore)" title="貼上圖片網址" aria-label="貼上圖片網址"><i class="fas fa-link"></i></button>
-        <button type="button" class="image-toolbar-btn" @click="triggerExtraImageUpload(editorStore)" title="上傳圖片" aria-label="上傳圖片"><i class="fas fa-upload"></i></button>
-        <button v-if="image" type="button" class="image-toolbar-btn" @click="deleteSingleImage(image.id, editorStore)" title="刪除目前圖片" aria-label="刪除目前圖片"><i class="fas fa-trash-alt"></i></button>
+        <button type="button" class="image-toolbar-btn" :disabled="!image?.url" @click="copyImageUrl(image.url)" :title="t('stores.copyImageUrl')" :aria-label="t('stores.copyImageUrl')"><i class="fas fa-copy"></i></button>
+        <button type="button" class="image-toolbar-btn" @click="addExtraImageUrl(editorStore)" :title="t('stores.pasteImageUrl')" :aria-label="t('stores.pasteImageUrl')"><i class="fas fa-link"></i></button>
+        <button type="button" class="image-toolbar-btn" @click="triggerExtraImageUpload(editorStore)" :title="t('stores.uploadImage')" :aria-label="t('stores.uploadImage')"><i class="fas fa-upload"></i></button>
+        <button v-if="image" type="button" class="image-toolbar-btn" @click="deleteSingleImage(image.id, editorStore)" :title="t('stores.deleteImage')" :aria-label="t('stores.deleteImage')"><i class="fas fa-trash-alt"></i></button>
       </template>
     </SmartMenuEditorModal>
+
+    <MenuTransferModal v-if="showTransfer" :stores="groupedStores" @close="showTransfer = false" />
   </div>
 </template>
 
@@ -241,7 +247,8 @@
 import StatusNotice from "../ui/StatusNotice.vue"
 
 
-import { formatDateShort as formatDate } from '../../utils/format'
+import { compareText, formatDateShort as formatDate } from '../../utils/format'
+import { t, translateError } from '../../i18n'
 import { ref, reactive, computed, defineAsyncComponent, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, watch } from 'vue'
 import { useDebouncedRef } from '../../composables/useDebounce'
 
@@ -261,8 +268,9 @@ import { isMissingMenuImage } from '../../utils/menuImageHealth'
 import { MAX_FILE_SIZE_BYTES } from '../../constants'
 
 const SmartMenuEditorModal = defineAsyncComponent(() => import('./SmartMenuEditorModal.vue'))
+const MenuTransferModal = defineAsyncComponent(() => import('./MenuTransferModal.vue'))
 
-const { rawMenuData, dailyStores, dailyFreeStores, requireFullMenuData, releaseFullMenuData } = useFirestore()
+const { rawMenuData, dailyStores, dailyFreeStores, requireFullMenuData, releaseFullMenuData, systemSettings } = useFirestore()
 const { showToast } = useToast()
 const { storePanelPosition } = useSettingsTab()
 let fullMenuRequested = false
@@ -278,7 +286,7 @@ function syncFullMenuRequest(needed) {
 }
 
 const normalizeStoreName = (name) => String(name || '').trim()
-const compareZh = (a, b) => String(a || '').localeCompare(String(b || ''), 'zh-TW')
+const compareZh = compareText
 const isMenuItem = (item) => item && typeof item.name === 'string' && item.name.trim()
 
 const isQuickAdding = ref(false)
@@ -290,7 +298,9 @@ const shouldRestorePanelPosition = ref(true)
 
 const quickAddForm = reactive({ category: 'lunch', name: '', phone: '', address: '', url: '' })
 const quickAddFile = ref(null)
-const quickAddFileStatus = ref('未選擇圖片')
+// 空字串代表「未選擇圖片」，顯示文字在模板裡依語系決定。
+const quickAddFileStatus = ref('')
+const showTransfer = ref(false)
 
 const editingStoreName = ref(null)
 const editForm = reactive({ category: '', name: '', phone: '', address: '' })
@@ -323,9 +333,9 @@ const toggleOpenToday = async (store) => {
       serviceDate: todayKey,
       updatedAt: serverTimestamp(),
     }, { merge: true })
-    showToast(opening ? `已開放「${store.name}」今日點餐` : `已關閉「${store.name}」今日點餐`)
+    showToast(t(opening ? 'stores.opened' : 'stores.closed', { store: store.name }))
   } catch {
-    showToast('更新今日開放狀態失敗', 'error')
+    showToast(t('stores.toggleFailed'), 'error')
   } finally {
     togglingStoreName.value = null
   }
@@ -481,8 +491,14 @@ const groupedStores = computed(() => {
   return Object.values(storeMap).sort((a, b) => compareZh(a.name, b.name))
 })
 
+// 台灣格式（09xx-xxx-xxx、0x-xxxx-xxxx）只在系統語言為繁體中文時自動套用；
+// 其他地區的電話格式差異太大，只濾掉不合法的字元，保留使用者自己的寫法。
 const formatPhone = (formType) => {
   const f = formType === 'quickAddForm' ? quickAddForm : editForm
+  if (systemSettings.value?.locale !== 'zh-TW') {
+    f.phone = f.phone.replace(/[^\d+\-()\s.#*,;extEXT]/g, '')
+    return
+  }
   let v = f.phone.replace(/\D/g, '')
   if (v.startsWith('09')) v = v.length > 7 ? v.replace(/^(\d{4})(\d{3})(\d{0,3}).*/, '$1-$2-$3') : v.length > 4 ? v.replace(/^(\d{4})(\d{0,3})/, '$1-$2') : v
   else if (v.startsWith('0')) v = v.length > 6 ? v.replace(/^(\d{2})(\d{4})(\d{0,4}).*/, '$1-$2-$3') : v.length > 2 ? v.replace(/^(\d{2})(\d{0,4})/, '$1-$2') : v
@@ -514,7 +530,7 @@ const handleMenuImageError = async (image, store) => {
     const missing = await isMissingMenuImage({ objectRef: storageRefForImage(image), url: image.url, metadata: getMetadata, request: fetch })
     if (!missing) return
     await removeImageRecord(image.id, store)
-    showToast('已刪除失效的菜單圖片，餐點資料已保留')
+    showToast(t('stores.brokenImageRemoved'))
   } catch {
     // 刪不掉就維持顯示「失效」，由使用者自己按 × 刪除。
   }
@@ -545,47 +561,47 @@ const deleteStoredImages = async (images) => {
 
 const promptQuickAddUrl = async () => {
   const url = await promptDialog({
-    title: '使用圖片網址',
-    message: '請貼上圖片直連網址（不是網頁網址）。外站連結可能過期，長期使用建議改用「上傳圖片」。',
+    title: t('stores.urlTitle'),
+    message: t('stores.urlMessage'),
     placeholder: 'https://…',
   })
-  if (url !== null) { quickAddForm.url = url.trim(); quickAddFile.value = null; if (quickAddFileInput.value) quickAddFileInput.value.value = ''; quickAddFileStatus.value = url.trim() ? '已輸入網址' : '未選擇圖片' }
+  if (url !== null) { quickAddForm.url = url.trim(); quickAddFile.value = null; if (quickAddFileInput.value) quickAddFileInput.value.value = ''; quickAddFileStatus.value = url.trim() ? t('stores.urlEntered') : '' }
 }
 
 const handleQuickAddFile = (event) => {
   if (event.target.files.length > 0) { quickAddFile.value = event.target.files[0]; quickAddForm.url = ''; quickAddFileStatus.value = quickAddFile.value.name }
-  else { quickAddFile.value = null; quickAddFileStatus.value = '未選擇圖片' }
+  else { quickAddFile.value = null; quickAddFileStatus.value = '' }
 }
 
 const submitQuickAdd = async () => {
   const name = quickAddForm.name.trim()
-  if (!name) return showToast('請輸入店家名稱', 'error')
-  if (groupedStores.value.some(s => s.name === name)) return showToast(`「${name}」已存在，請直接在列表下方新增圖片`, 'error')
+  if (!name) return showToast(t('stores.nameMissing'), 'error')
+  if (groupedStores.value.some(s => s.name === name)) return showToast(t('stores.exists', { name }), 'error')
   isQuickAdding.value = true
 
   const doAdd = async ({ url, storagePath = '' }) => {
     const now = Date.now()
     await addDoc(collection(db, 'menu_images'), { storeName: name, phone: quickAddForm.phone.trim(), address: quickAddForm.address.trim(), category: quickAddForm.category, url, storagePath, timestamp: now, createdAt: now, menuUpdatedAt: now })
-    showToast('店家建立成功！')
+    showToast(t('stores.created'))
     quickAddForm.name = ''; quickAddForm.phone = ''; quickAddForm.address = ''; quickAddForm.url = ''
-    quickAddFile.value = null; quickAddFileStatus.value = '未選擇圖片'
+    quickAddFile.value = null; quickAddFileStatus.value = ''
     if (quickAddFileInput.value) quickAddFileInput.value.value = ''
   }
 
   if (quickAddFile.value) {
-    if (quickAddFile.value.size > MAX_FILE_SIZE_BYTES) { isQuickAdding.value = false; return showToast('圖片超過 2MB', 'error') }
-    showToast('圖片上傳中，請稍候...')
+    if (quickAddFile.value.size > MAX_FILE_SIZE_BYTES) { isQuickAdding.value = false; return showToast(t('stores.imageTooLarge'), 'error') }
+    showToast(t('stores.uploading'))
     let uploaded = null
     try {
       uploaded = await uploadFileToStorage(quickAddFile.value)
       await doAdd(uploaded)
     } catch (err) {
       if (uploaded) await deleteStoredImages([uploaded])
-      showToast('上傳失敗: ' + err.message, 'error')
+      showToast(t('stores.uploadFailed', { message: translateError(err) }), 'error')
     } finally { isQuickAdding.value = false }
   } else {
     try { await doAdd({ url: quickAddForm.url }) }
-    catch (err) { showToast('建立失敗: ' + err.message, 'error') }
+    catch (err) { showToast(t('stores.createFailed', { message: translateError(err) }), 'error') }
     finally { isQuickAdding.value = false }
   }
 }
@@ -593,21 +609,21 @@ const submitQuickAdd = async () => {
 const duplicateStore = async (store) => {
   if (duplicatingStoreName.value) return
 
-  const suggestedName = `${store.name}－分店`
+  const suggestedName = `${store.name}${t('stores.branchSuffix')}`
   const input = await promptDialog({
-    title: '複製為新分店',
-    message: '請輸入新分店名稱：',
-    detail: '將複製基本資料、菜單圖片與智慧點餐品項；不會複製訂單、收款、錢包及統計紀錄。',
+    title: t('stores.duplicateTitle'),
+    message: t('stores.duplicateMessage'),
+    detail: t('stores.duplicateDetail'),
     defaultValue: suggestedName,
-    confirmText: '複製',
+    confirmText: t('stores.duplicateConfirm'),
   })
   if (input === null) return
 
   const newName = normalizeStoreName(input)
-  if (!newName) return showToast('新分店名稱不能為空', 'error')
-  if (newName === store.name) return showToast('新分店名稱必須與原店家不同', 'error')
-  if (groupedStores.value.some(item => item.name === newName)) return showToast(`「${newName}」已存在，請使用其他名稱`, 'error')
-  if (store.images.length > 450) return showToast('菜單圖片數量過多，請聯絡系統管理員協助複製', 'error')
+  if (!newName) return showToast(t('stores.branchNameRequired'), 'error')
+  if (newName === store.name) return showToast(t('stores.branchNameSame'), 'error')
+  if (groupedStores.value.some(item => item.name === newName)) return showToast(t('stores.branchExists', { name: newName }), 'error')
+  if (store.images.length > 450) return showToast(t('stores.tooManyImages'), 'error')
 
   duplicatingStoreName.value = store.name
   try {
@@ -637,9 +653,9 @@ const duplicateStore = async (store) => {
     })
 
     await batch.commit()
-    showToast(`已複製為「${newName}」`)
+    showToast(t('stores.duplicated', { name: newName }))
   } catch (err) {
-    showToast('複製失敗: ' + err.message, 'error')
+    showToast(t('stores.duplicateFailed', { message: translateError(err) }), 'error')
   } finally {
     duplicatingStoreName.value = null
   }
@@ -651,8 +667,8 @@ const editFormFingerprint = () => JSON.stringify([editForm.category, editForm.na
 const editIsDirty = () => editingStoreName.value !== null && editFormFingerprint() !== editFormSnapshot
 
 const copyImageUrl = async (url) => {
-  try { await navigator.clipboard.writeText(url); showToast('已複製菜單圖片網址') }
-  catch { showToast('無法複製網址，請檢查瀏覽器權限', 'error') }
+  try { await navigator.clipboard.writeText(url); showToast(t('stores.urlCopied')) }
+  catch { showToast(t('stores.copyFailed'), 'error') }
 }
 
 const startEdit = (store) => {
@@ -663,12 +679,12 @@ const startEdit = (store) => {
 
 const cancelEdit = async ({ force = false } = {}) => {
   if (!force && editIsDirty() && !await confirmDialog({
-    title: '放棄這次編輯？',
-    message: `「${editingStoreName.value}」的資料已經改過但還沒儲存。`,
-    detail: '關掉之後改的內容就沒了。',
+    title: t('stores.discardTitle'),
+    message: t('stores.discardMessage', { store: editingStoreName.value }),
+    detail: t('stores.discardDetail'),
     variant: 'danger',
-    confirmText: '放棄修改',
-    cancelText: '繼續編輯',
+    confirmText: t('stores.discardConfirm'),
+    cancelText: t('stores.keepEditing'),
   })) return false
   editingStoreName.value = null
   editFormSnapshot = ''
@@ -678,20 +694,20 @@ const cancelEdit = async ({ force = false } = {}) => {
 const saveEdit = async (menuItems = null) => {
   const store = editorStore.value
   const newName = editForm.name.trim()
-  if (!newName) return (showToast('店家名稱不能為空', 'error'), false)
-  if (newName !== store.name && groupedStores.value.some(item => item.name === newName)) return (showToast('店家名稱已存在', 'error'), false)
+  if (!newName) return (showToast(t('stores.nameEmpty'), 'error'), false)
+  if (newName !== store.name && groupedStores.value.some(item => item.name === newName)) return (showToast(t('stores.nameTaken'), 'error'), false)
   try {
     const batch = writeBatch(db)
     const now = Date.now()
     store.docIds.forEach(id => batch.update(doc(db, 'menu_images', id), { storeName: newName, phone: editForm.phone.trim(), address: editForm.address.trim(), category: editForm.category, updatedAt: now }))
     if (menuItems !== null) batch.update(doc(db, 'menu_images', store.menuDocId || store.docIds[0]), { menuItems, menuUpdatedAt: now })
     await batch.commit()
-    showToast('店家資料與菜單已儲存')
+    showToast(t('stores.saved'))
     editorStoreName.value = newName
     editingStoreName.value = newName
     editFormSnapshot = editFormFingerprint()
     return true
-  } catch (err) { showToast('更新失敗: ' + err.message, 'error'); return false }
+  } catch (err) { showToast(t('stores.updateFailed', { message: translateError(err) }), 'error'); return false }
 }
 
 // 刪除一張菜單圖的紀錄（手動刪除與失效自動清理共用）。
@@ -728,27 +744,25 @@ const removeImageRecord = async (imgId, store) => {
 const deleteSingleImage = async (imgId, store) => {
   const broken = isBrokenImage(store.images.find(item => item.id === imgId))
   const confirmed = await confirmDialog({
-    title: broken ? '刪除這張失效圖片？' : '刪除這頁菜單？',
-    message: broken
-      ? `「${store.name}」這張菜單圖片的連結已失效，將刪除此紀錄（餐點資料保留）。`
-      : `將刪除「${store.name}」的這一頁菜單圖片。`,
+    title: t(broken ? 'stores.deleteBrokenTitle' : 'stores.deletePageTitle'),
+    message: t(broken ? 'stores.deleteBrokenMessage' : 'stores.deletePageMessage', { store: store.name }),
     variant: 'danger',
-    confirmText: '刪除',
+    confirmText: t('common.delete'),
   })
   if (!confirmed) return
   try {
     const failedDeletes = await removeImageRecord(imgId, store)
-    showToast(failedDeletes ? '菜單資料已刪除，但 Storage 圖片清理失敗' : '已刪除該頁菜單', failedDeletes ? 'warning' : 'success')
-  } catch (err) { showToast('刪除失敗: ' + err.message, 'error') }
+    showToast(t(failedDeletes ? 'stores.storageCleanupFailed' : 'stores.pageDeleted'), failedDeletes ? 'warning' : 'success')
+  } catch (err) { showToast(t('stores.deleteFailed', { message: translateError(err) }), 'error') }
 }
 
 const deleteWholeStore = async (store) => {
   const confirmed = await confirmDialog({
-    title: '永久刪除店家？',
-    message: `確定要永久刪除「${store.name}」嗎？`,
-    detail: '將刪除此店家的全部菜單圖片與品項設定，不可復原。',
+    title: t('stores.deleteStoreTitle'),
+    message: t('stores.deleteStoreMessage', { store: store.name }),
+    detail: t('stores.deleteStoreDetail'),
     variant: 'danger',
-    confirmText: '永久刪除',
+    confirmText: t('stores.deleteForever'),
   })
   if (!confirmed) return
   try {
@@ -756,9 +770,9 @@ const deleteWholeStore = async (store) => {
     store.docIds.forEach(id => batch.delete(doc(db, 'menu_images', id)))
     await batch.commit()
     const failedDeletes = await deleteStoredImages(store.images)
-    showToast(failedDeletes ? `已刪除 ${store.name}，但有 ${failedDeletes} 張 Storage 圖片清理失敗` : `已刪除 ${store.name}`, failedDeletes ? 'warning' : 'success')
+    showToast(failedDeletes ? t('stores.storeDeletedPartial', { store: store.name, count: failedDeletes }) : t('stores.storeDeleted', { store: store.name }), failedDeletes ? 'warning' : 'success')
     if (editorStoreName.value === store.name) closeSmartEditor()
-  } catch (err) { showToast('刪除失敗: ' + err.message, 'error') }
+  } catch (err) { showToast(t('stores.deleteFailed', { message: translateError(err) }), 'error') }
 }
 
 const performAddExtraImage = async ({ url, storagePath = '' }, store) => {
@@ -772,19 +786,19 @@ const performAddExtraImage = async ({ url, storagePath = '' }, store) => {
   batch.set(newDocRef, newDocData)
   emptyImages.forEach(img => batch.delete(doc(db, 'menu_images', img.id)))
   await batch.commit()
-  showToast('圖片新增成功！')
+  showToast(t('stores.imageAdded'))
 }
 
 const addExtraImageUrl = async (store) => {
   const url = await promptDialog({
-    title: '新增菜單圖片',
-    message: `為「${store.name}」貼上圖片直連網址。外站連結可能過期，長期使用建議改用「上傳圖片」。`,
+    title: t('stores.addImageTitle'),
+    message: t('stores.addImageMessage', { store: store.name }),
     placeholder: 'https://…',
-    confirmText: '新增',
+    confirmText: t('stores.add'),
   })
   if (url && url.trim() !== '') {
     try { await performAddExtraImage({ url: url.trim() }, store) }
-    catch (err) { showToast('新增失敗: ' + err.message, 'error') }
+    catch (err) { showToast(t('stores.addFailed', { message: translateError(err) }), 'error') }
   }
 }
 
@@ -793,15 +807,15 @@ const triggerExtraImageUpload = (store) => { targetStoreForExtraImage.value = st
 const handleExtraImageUpload = async (event) => {
   if (event.target.files.length === 0 || !targetStoreForExtraImage.value) return
   const file = event.target.files[0]
-  if (file.size > MAX_FILE_SIZE_BYTES) { event.target.value = ''; return showToast('圖片超過 2MB', 'error') }
-  showToast('圖片上傳中，請稍候...')
+  if (file.size > MAX_FILE_SIZE_BYTES) { event.target.value = ''; return showToast(t('stores.imageTooLarge'), 'error') }
+  showToast(t('stores.uploading'))
   let uploaded = null
   try {
     uploaded = await uploadFileToStorage(file)
     await performAddExtraImage(uploaded, targetStoreForExtraImage.value)
   } catch (error) {
     if (uploaded) await deleteStoredImages([uploaded])
-    showToast('上傳失敗: ' + error.message, 'error')
+    showToast(t('stores.uploadFailed', { message: translateError(error) }), 'error')
   }
   finally { event.target.value = ''; targetStoreForExtraImage.value = null }
 }

@@ -8,7 +8,8 @@ import { useToast } from '../composables/useToast'
 import { usePendingCart } from '../composables/usePendingCart'
 import { escapeCSV } from '../utils/csv'
 import { isCashOrder, orderPaymentStatus } from '../utils/orderPayment'
-import { formatTimeShort, getLocalDateKey } from '../utils/format'
+import { fromMinorUnits, formatTimeShort, getAppTimeZone, getFormatLocale, getLocalDateKey } from '../utils/format'
+import { t, translateError } from '../i18n'
 import {
   cancelOrdersWithWalletRefundViaFunction,
   setOrderFreeStatusWithWalletAdjustmentViaFunction,
@@ -21,6 +22,7 @@ import StoreSidebar from '../components/dashboard/StoreSidebar.vue'
 import StoreFilterTabs from '../components/dashboard/StoreFilterTabs.vue'
 import ConfirmDialog from '../components/ui/ConfirmDialog.vue'
 import DiningRecovery from '../components/dashboard/DiningRecovery.vue'
+import CutoffControl from '../components/dashboard/CutoffControl.vue'
 import { confirmDialog } from '../composables/useDialog'
 
 const router = useRouter()
@@ -105,7 +107,7 @@ const dashboardStoreFilter = ref('__all__')
 const filteredTodayOrders = computed(() => {
   if (dashboardStoreFilter.value === '__all__') return visibleTodayOrders.value
   return visibleTodayOrders.value.filter(order =>
-    (order.storeName || '未指定店家') === dashboardStoreFilter.value
+    (order.storeName || t('common.unknownStore')) === dashboardStoreFilter.value
   )
 })
 
@@ -115,7 +117,7 @@ const hasOrders = computed(() => visibleTodayOrders.value.length > 0)
 // 否則畫面會停在一個空的篩選上。原本這段守在 OrdersTable，篩選膠囊移出後改由此處負責。
 watch(visibleTodayOrders, (orders) => {
   if (dashboardStoreFilter.value === '__all__') return
-  const storeNames = new Set(orders.map(order => order.storeName || '未指定店家'))
+  const storeNames = new Set(orders.map(order => order.storeName || t('common.unknownStore')))
   if (!storeNames.has(dashboardStoreFilter.value)) dashboardStoreFilter.value = '__all__'
 })
 
@@ -127,17 +129,17 @@ const displayOrders = computed(() => visibleTodayOrders.value)
 // 整批清空一直都有確認框，單筆反而沒有，這裡補齊。
 async function confirmOrderDeletion(order) {
   return confirmDialog({
-    title: '刪除這筆訂單？',
-    message: `${order.name || '這位同事'}的「${order.meal || '訂單'}」`,
-    detail: '刪除後會自動退款到錢包，無法復原。',
+    title: t('dashboard.deleteTitle'),
+    message: t('dashboard.deleteMessage', { name: order.name || t('dashboard.someone'), meal: order.meal || t('dashboard.anOrder') }),
+    detail: t('dashboard.deleteDetail'),
     variant: 'danger',
-    confirmText: '刪除並退款',
+    confirmText: t('dashboard.deleteConfirm'),
   })
 }
 
 async function deleteOrder(order) {
-  if (!isAdmin.value) { showToast('僅管理員可刪除', 'error'); return }
-  if (order.paymentMethod === 'cash' && order.cashStatus === 'collected') { showToast('已收現金單不可刪除', 'error'); return }
+  if (!isAdmin.value) { showToast(t('dashboard.adminOnlyDelete'), 'error'); return }
+  if (order.paymentMethod === 'cash' && order.cashStatus === 'collected') { showToast(t('dashboard.collectedCannotDelete'), 'error'); return }
   if (!await confirmOrderDeletion(order)) return
   const orderIds = [order.id]
   markOrdersPendingDeletion(orderIds)
@@ -145,12 +147,12 @@ async function deleteOrder(order) {
     await cancelOrdersWithWalletRefundViaFunction({
       orderIds,
       actorName: userDisplayName.value,
-      reason: '管理員刪除訂單退款',
+      reason: t('dashboard.adminDeleteReason'),
     })
-    showToast('已刪除並完成退款', 'success')
+    showToast(t('dashboard.deleted'), 'success')
   } catch (err) {
     unmarkOrdersPendingDeletion(orderIds)
-    showToast(err.message === 'CASH_PAYMENT_ALREADY_COLLECTED' ? '已收現金單不可刪除' : '刪除失敗，已恢復訂單', 'error')
+    showToast(err.message === 'CASH_PAYMENT_ALREADY_COLLECTED' ? t('dashboard.collectedCannotDelete') : translateError(err, 'dashboard.deleteFailed'), 'error')
   }
 }
 
@@ -162,12 +164,12 @@ async function cancelOrder(order) {
     await cancelOrdersWithWalletRefundViaFunction({
       orderIds,
       actorName: userDisplayName.value,
-      reason: '員工刪除訂單退款',
+      reason: t('dashboard.memberDeleteReason'),
     })
-    showToast('已刪除訂單並退款', 'success')
-  } catch {
+    showToast(t('dashboard.deletedOwn'), 'success')
+  } catch (err) {
     unmarkOrdersPendingDeletion(orderIds)
-    showToast('刪除失敗，已恢復訂單', 'error')
+    showToast(translateError(err, 'dashboard.deleteFailed'), 'error')
   }
 }
 
@@ -177,8 +179,8 @@ function copyOrder(order) {
 }
 
 async function toggleFreeOrder(order) {
-  if (!isAdmin.value) { showToast('僅管理員可操作', 'error'); return }
-  if (order.paymentMethod === 'cash' && order.cashStatus === 'collected') { showToast('已收現金單不可切換免費', 'error'); return }
+  if (!isAdmin.value) { showToast(t('dashboard.adminOnly'), 'error'); return }
+  if (order.paymentMethod === 'cash' && order.cashStatus === 'collected') { showToast(t('dashboard.collectedCannotFree'), 'error'); return }
   const target = !order.isFree
   setOrderOverride(order.id, { isFree: target })   // 樂觀：立即切換免費狀態
   try {
@@ -187,15 +189,10 @@ async function toggleFreeOrder(order) {
       isFree: target,
       actorName: userDisplayName.value,
     })
-    showToast(target ? '已標記免費，不計入個人費用' : '已取消免費並恢復個人費用', 'success')
+    showToast(target ? t('dashboard.markedFree') : t('dashboard.unmarkedFree'), 'success')
   } catch (err) {
     clearOrderOverride(order.id)   // 失敗還原
-    const message = err.message === 'INSUFFICIENT_WALLET_BALANCE'
-      ? '錢包餘額不足，無法取消免費'
-      : err.message === 'CASH_PAYMENT_ALREADY_COLLECTED'
-        ? '已收現金單不可切換免費'
-        : '免費操作失敗'
-    showToast(message, 'error')
+    showToast(err.message === 'CASH_PAYMENT_ALREADY_COLLECTED' ? t('dashboard.collectedCannotFree') : translateError(err, 'dashboard.freeFailed'), 'error')
   }
 }
 
@@ -210,17 +207,10 @@ async function saveOrderEdit({ id, meal, note, price }) {
       price,
       actorName: userDisplayName.value,
     })
-    showToast('已更新')
+    showToast(t('dashboard.updated'))
   } catch (err) {
     clearOrderOverride(id)   // 失敗還原
-    const message = err.message === 'INSUFFICIENT_WALLET_BALANCE'
-      ? '錢包餘額不足，無法改成較高金額'
-      : err.message === 'CASH_PAYMENT_ALREADY_COLLECTED'
-        ? '已收現金單不可調整金額'
-        : err.message === 'MENU_ITEM_PRICE_MISMATCH'
-          ? '餐點或價格已更新，請重新選擇'
-          : '更新失敗'
-    showToast(message, 'error')
+    showToast(translateError(err, 'dashboard.updateFailed'), 'error')
   }
 }
 
@@ -229,32 +219,37 @@ const csvExporting = ref(false)
 
 async function exportTodayCSV() {
   if (csvExporting.value || !hasOrders.value) return
-  if (diningLoading.value || diningError.value) { showToast('尚未確認用餐名單，請稍後或重新整理再匯出', 'error'); return }
-  if (pendingNeeds.value.length && !await confirmDialog({ title: '仍有人尚未重新點餐', message: `待補點：${[...new Set(pendingNeeds.value.map(n => n.name))].join('、')}`, detail: '本次 CSV 僅包含有效餐點，不代表所有用餐人員已點齊。', confirmText: '仍要匯出有效訂單' })) return
+  if (diningLoading.value || diningError.value) { showToast(t('dashboard.exportNotReady'), 'error'); return }
+  if (pendingNeeds.value.length && !await confirmDialog({
+    title: t('dashboard.exportPendingTitle'),
+    message: t('dashboard.exportPendingMessage', { names: [...new Set(pendingNeeds.value.map(n => n.name))].join(t('home.listSeparator')) }),
+    detail: t('dashboard.exportPendingDetail'),
+    confirmText: t('dashboard.exportPendingConfirm'),
+  })) return
   csvExporting.value = true
   try {
-    const headers = ['成員', '店家', '餐點', '備註', '金額', '付款', '狀態', '時間']
+    const headers = ['member', 'store', 'meal', 'note', 'amount', 'payment', 'status', 'time'].map(key => t(`dashboard.csv.${key}`))
     const list = [...visibleTodayOrders.value].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
     const rows = list.map(o => [
-      o.name, o.storeName, o.meal, o.note || '', o.price,
-      isCashOrder(o) ? '現金' : '錢包',
+      o.name, o.storeName, o.meal, o.note || '', fromMinorUnits(o.price),
+      o.paymentMethod === 'none' ? t('common.payment.none') : isCashOrder(o) ? t('common.payment.cash') : t('common.payment.wallet'),
       orderPaymentStatus(o),
       formatTimeShort(o.timestamp || o.createdAt?.toMillis?.() || Date.now())
     ])
     const totalAmount = list.reduce((sum, o) => o.isFree ? sum : sum + (Number(o.price) || 0), 0)
-    const totalsRow = ['合計', '', `${list.length} 筆`, '', totalAmount, '', '', '']
+    const totalsRow = [t('dashboard.csv.total'), '', t('dashboard.csv.count', { count: list.length }), '', fromMinorUnits(totalAmount), '', '', '']
     const csv = [headers, ...rows, totalsRow].map(r => r.map(escapeCSV).join(',')).join('\n')
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `今日訂單_${getLocalDateKey()}.csv`
+    a.download = t('dashboard.csv.fileName', { date: getLocalDateKey() })
     a.click()
     URL.revokeObjectURL(url)
-    showToast('今日訂單 CSV 已匯出', 'success')
+    showToast(t('dashboard.exported'), 'success')
   } catch (error) {
     console.error('[Dashboard] CSV export failed:', error)
-    showToast('匯出今日訂單失敗，請稍後再試', 'error')
+    showToast(t('dashboard.exportFailed'), 'error')
   } finally {
     csvExporting.value = false
   }
@@ -265,21 +260,21 @@ const clearConfirmLoading = ref(false)
 
 // 開啟確認對話框前先做權限與資料檢查，通過才需要確認
 function requestClearTodayOrders() {
-  if (!isAdmin.value) { showToast('需要管理員權限', 'error'); return }
-  if (!visibleTodayOrders.value.length) { showToast('今日沒有訂單'); return }
+  if (!isAdmin.value) { showToast(t('dashboard.adminRequired'), 'error'); return }
+  if (!visibleTodayOrders.value.length) { showToast(t('dashboard.noOrders')); return }
   if (visibleTodayOrders.value.some(order => order.paymentMethod === 'cash' && order.cashStatus === 'collected')) {
-    showToast('今日含已收現金單，無法整批清空', 'error')
+    showToast(t('dashboard.collectedCannotClear'), 'error')
     return
   }
   clearConfirmOpen.value = true
 }
 
 async function clearTodayOrders() {
-  if (!isAdmin.value) { showToast('需要管理員權限', 'error'); return }
+  if (!isAdmin.value) { showToast(t('dashboard.adminRequired'), 'error'); return }
   const toDelete = [...visibleTodayOrders.value]
-  if (!toDelete.length) { showToast('今日沒有訂單'); clearConfirmOpen.value = false; return }
+  if (!toDelete.length) { showToast(t('dashboard.noOrders')); clearConfirmOpen.value = false; return }
   if (toDelete.some(order => order.paymentMethod === 'cash' && order.cashStatus === 'collected')) {
-    showToast('今日含已收現金單，無法整批清空', 'error')
+    showToast(t('dashboard.collectedCannotClear'), 'error')
     clearConfirmOpen.value = false
     return
   }
@@ -290,12 +285,12 @@ async function clearTodayOrders() {
     await cancelOrdersWithWalletRefundViaFunction({
       orderIds,
       actorName: userDisplayName.value,
-      reason: '管理員清空今日訂單退款',
+      reason: t('dashboard.clearReason'),
     })
-    showToast(`已清空今日 ${toDelete.length} 筆並完成退款`, 'success')
-  } catch {
+    showToast(t('dashboard.cleared', { count: toDelete.length }), 'success')
+  } catch (err) {
     unmarkOrdersPendingDeletion(orderIds)
-    showToast('清空今日失敗，已恢復訂單', 'error')
+    showToast(translateError(err, 'dashboard.clearFailed'), 'error')
   } finally {
     clearConfirmLoading.value = false
     clearConfirmOpen.value = false
@@ -307,21 +302,21 @@ function goSelectStore() {
   router.push('/')
 }
 
-const dateLabel = computed(() => new Date().toLocaleDateString('zh-TW', { month: 'long', day: 'numeric', weekday: 'short' }))
+const dateLabel = computed(() => new Date().toLocaleDateString(getFormatLocale(), { timeZone: getAppTimeZone(), month: 'long', day: 'numeric', weekday: 'short' }))
 </script>
 
 <template>
   <div class="page">
-    <TopHeader title="今日訂單">
+    <TopHeader :title="t('dashboard.title')">
       <template #actions>
         <span class="date-badge mono">{{ dateLabel }}</span>
         <button type="button" class="action-btn export-csv-btn" :disabled="!hasOrders || csvExporting" @click="exportTodayCSV">
           <i class="fas fa-download" aria-hidden="true"></i>
-          {{ csvExporting ? '匯出中…' : '匯出 CSV' }}
+          {{ csvExporting ? t('dashboard.exporting') : t('dashboard.exportCsv') }}
         </button>
         <button v-if="isAdmin" type="button" class="action-btn danger" :disabled="!hasOrders" @click="requestClearTodayOrders">
           <i class="fas fa-trash-can" aria-hidden="true"></i>
-          清空今日
+          {{ t('dashboard.clearToday') }}
         </button>
       </template>
     </TopHeader>
@@ -330,6 +325,7 @@ const dateLabel = computed(() => new Date().toLocaleDateString('zh-TW', { month:
       <div class="content">
         <div class="grid">
           <div class="main-col">
+            <CutoffControl v-if="isAdmin" />
             <KpiRow class="kpi-block" :orders="visibleTodayOrders" :dining-people="diningPeople" :pending-people="new Set(pendingNeeds.map(n => n.personKey)).size" :total-members="members.length" />
             <DiningRecovery ref="diningRecovery" />
 
@@ -359,11 +355,11 @@ const dateLabel = computed(() => new Date().toLocaleDateString('zh-TW', { month:
 
             <div v-else-if="!pendingNeeds.length" class="empty-state">
               <div class="empty-icon" aria-hidden="true"><i class="fas fa-utensils"></i></div>
-              <h2>今天還沒有人下單</h2>
-              <p>先選定今天的店家並開放點餐，訂單會即時顯示在這裡，系統也會自動幫你統整餐點。</p>
+              <h2>{{ t('dashboard.emptyTitle') }}</h2>
+              <p>{{ t('dashboard.emptyText') }}</p>
               <button type="button" class="empty-action" @click="goSelectStore">
                 <i class="fas fa-store" aria-hidden="true"></i>
-                選擇今日店家
+                {{ t('dashboard.pickStores') }}
               </button>
             </div>
           </div>
@@ -376,10 +372,10 @@ const dateLabel = computed(() => new Date().toLocaleDateString('zh-TW', { month:
     <ConfirmDialog
       :open="clearConfirmOpen"
       variant="danger"
-      title="清空今日全部訂單？"
-      :message="`將刪除今日 ${visibleTodayOrders.length} 筆訂單，錢包扣款會全數退回。`"
-      detail="此操作會影響所有人的今日訂單，請再次確認。"
-      confirm-text="確認清空"
+      :title="t('dashboard.clearTitle')"
+      :message="t('dashboard.clearMessage', { count: visibleTodayOrders.length })"
+      :detail="t('dashboard.clearDetail')"
+      :confirm-text="t('dashboard.clearConfirm')"
       :loading="clearConfirmLoading"
       @confirm="clearTodayOrders"
       @cancel="clearConfirmOpen = false"

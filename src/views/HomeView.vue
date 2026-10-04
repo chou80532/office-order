@@ -1,7 +1,7 @@
 <script setup>
 import LoadingState from '../components/ui/LoadingState.vue'
 
-import { formatMoney } from '../utils/format'
+import { formatMoney, getLocalDateKey } from '../utils/format'
 import { ref, computed, watch, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore'
 import { db } from '../firestore'
@@ -17,6 +17,9 @@ import { fireConfetti } from '../utils'
 import { countCartDishes } from '../utils/cart'
 import { prepareSubmission, submissionDefinitelyRejected } from '../utils/orderSubmission'
 import { CONFETTI_SUBMIT, SUBMIT_UNDO_DURATION_MS } from '../constants'
+import { selfPaymentMethod } from '../utils/systemSettings'
+import { useOrderingCutoff } from '../composables/useOrderingCutoff'
+import { t, translateError } from '../i18n'
 import {
   cancelOrdersWithWalletRefundViaFunction,
   createOrderRequestId,
@@ -38,8 +41,9 @@ const StatsPanel = defineAsyncComponent(() => import('../components/modals/Stats
 const StoreManagerPanel = defineAsyncComponent(() => import('../components/modals/StoreManagerPanel.vue'))
 
 const router = useRouter()
-const { userDisplayName, userUid } = useAuth()
+const { userDisplayName, userUid, isAdmin } = useAuth()
 const {
+  systemSettings,
   allStores, dailyStores, dailyFreeStores, dailyStoresConfigured, dailyStoresReady, dailySettingsExists,
   dailyStoreDateMatched, dailyActiveStoreCount,
   dailyStoresError, todayOrders, ordersLoading, menuLoading, diningDay,
@@ -63,21 +67,25 @@ const menuInitialLoading = computed(() =>
 )
 const bootLoadingText = computed(() => {
   if (!dailyStoresReady.value) {
-    return {
-      title: '正在確認今日開放店家…',
-      subtitle: '確認完成前不會顯示舊店家，避免誤點昨天的菜單。'
-    }
+    return { title: t('home.boot.checkingTitle'), subtitle: t('home.boot.checkingSubtitle') }
   }
   if (menuLoading.value && allStores.value.length === 0) {
-    return {
-      title: '正在載入店家菜單…',
-      subtitle: '正在同步最新菜單與店家資訊。'
-    }
+    return { title: t('home.boot.menuTitle'), subtitle: t('home.boot.menuSubtitle') }
   }
-  return {
-    title: '正在同步點餐資料…',
-    subtitle: '正在整理訂單與購物車狀態。'
+  return { title: t('home.boot.syncTitle'), subtitle: t('home.boot.syncSubtitle') }
+})
+
+// 收單時間提示：收單前 30 分鐘內改用提醒樣式。
+const { cutoffTime, closed: orderingClosed, minutesLeft } = useOrderingCutoff()
+const cutoffBanner = computed(() => {
+  if (!cutoffTime.value) return null
+  if (orderingClosed.value) {
+    return { tone: 'closed', icon: 'fa-lock', text: t(isAdmin.value ? 'home.cutoff.closedAdmin' : 'home.cutoff.closedMember', { time: cutoffTime.value }) }
   }
+  if (minutesLeft.value !== null && minutesLeft.value <= 30) {
+    return { tone: 'soon', icon: 'fa-hourglass-half', text: t('home.cutoff.soon', { minutes: minutesLeft.value, time: cutoffTime.value }) }
+  }
+  return { tone: 'open', icon: 'fa-clock', text: t('home.cutoff.open', { time: cutoffTime.value }) }
 })
 // ── Keyboard shortcuts ────────────────────────
 function handleGlobalKeydown(e) {
@@ -123,7 +131,7 @@ onMounted(() => {
       ...currentCartOwnerPayload(),
       storeName: item.storeName || ''
     }]
-    showToast(`已加入：${item.meal}`)
+    showToast(t('home.added', { name: item.meal }))
   }
 })
 onUnmounted(() => {
@@ -155,8 +163,8 @@ const dailyStoreIssue = computed(() => {
     return {
       type: 'error',
       icon: '⚠️',
-      title: '今日店家設定讀取失敗',
-      message: '暫時無法載入今日店家，請確認網路後重新整理。',
+      title: t('home.issue.errorTitle'),
+      message: t('home.issue.errorMessage'),
       details: []
     }
   }
@@ -165,8 +173,8 @@ const dailyStoreIssue = computed(() => {
     return {
       type: 'missing',
       icon: '📅',
-      title: '今日尚未設定店家',
-      message: '今天的開放店家尚未設定，設定完成後就會顯示點餐菜單。',
+      title: t('home.issue.missingTitle'),
+      message: t('home.issue.missingMessage'),
       details: []
     }
   }
@@ -175,8 +183,8 @@ const dailyStoreIssue = computed(() => {
     return {
       type: 'date-mismatch',
       icon: '📅',
-      title: '今日尚未設定店家',
-      message: '今天的開放店家尚未設定，設定完成後就會顯示點餐菜單。',
+      title: t('home.issue.missingTitle'),
+      message: t('home.issue.missingMessage'),
       details: []
     }
   }
@@ -185,8 +193,8 @@ const dailyStoreIssue = computed(() => {
     return {
       type: 'empty-stores',
       icon: '🍽️',
-      title: '今天還沒開放店家',
-      message: '請先選擇今天要開放的店家，設定完成後大家就能開始點餐。',
+      title: t('home.issue.emptyTitle'),
+      message: t('home.issue.emptyMessage'),
       details: []
     }
   }
@@ -195,8 +203,8 @@ const dailyStoreIssue = computed(() => {
     return {
       type: 'unmatched-stores',
       icon: '🔎',
-      title: '已設定今日店家，但找不到對應菜單',
-      message: '今日店家的菜單尚未準備完成，請聯繫總務確認。',
+      title: t('home.issue.unmatchedTitle'),
+      message: t('home.issue.unmatchedMessage'),
       details: []
     }
   }
@@ -302,13 +310,13 @@ const currentCartOwnerPayload = () => {
     return {
       ownerName: String(userDisplayName.value || '').trim(),
       ownerUid: userUid.value || '',
-      paymentMethod: 'wallet',
+      paymentMethod: selfPaymentMethod(systemSettings.value),
     }
   }
   return {
     ownerName,
     ownerUid: owner.uid || '',
-    paymentMethod: owner?.paymentMethod || 'wallet',
+    paymentMethod: owner?.paymentMethod || selfPaymentMethod(systemSettings.value),
   }
 }
 
@@ -319,8 +327,9 @@ function rememberCartOwner(owner) {
 
 function formatItemNote(item) {
   const addons = Array.isArray(item.addons) ? item.addons : []
-  const addonText = addons.map(addon => addon.name).filter(Boolean).join('、')
-  return [item.note || '', addonText && `加料${item.addonMultiplier > 1 ? '（每份）' : ''}：${addonText}`].filter(Boolean).join('；')
+  const addonText = addons.map(addon => addon.name).filter(Boolean).join(t('home.listSeparator'))
+  const addonNote = addonText && t(item.addonMultiplier > 1 ? 'home.addonNoteEach' : 'home.addonNote', { addons: addonText })
+  return [item.note || '', addonNote].filter(Boolean).join('；')
 }
 
 const dishOptions = ref(null)
@@ -351,7 +360,7 @@ function saveDishOptions(item) {
     cartItems.value = [...cartItems.value, item]
   }
   dishOptions.value = null
-  showToast(original ? '已更新餐點' : `已加入 ${item.name}`)
+  showToast(original ? t('home.updatedItem') : t('home.addedItem', { name: item.name }))
 }
 
 function removeFromCart(index) {
@@ -360,9 +369,9 @@ function removeFromCart(index) {
   if (!removed) return
   const restore = createCartRestore([removed], index)
   cartItems.value = cartItems.value.filter((_, i) => i !== index)
-  showToast(`已移除 ${removed.name}`, 'success', {
+  showToast(t('home.removedItem', { name: removed.name }), 'success', {
     duration: 6000,
-    undoLabel: '復原',
+    undoLabel: t('home.undo'),
     undoFn: restore,
   })
 }
@@ -449,7 +458,7 @@ async function loadLastOrderForCart() {
   } catch (error) {
     if (requestId !== lastOrderRequestId) return
     console.error('[Firestore] last order query error:', error)
-    showToast('查詢上一筆訂單失敗，請稍後再試', 'error')
+    showToast(t('home.lastOrderFailed'), 'error')
   } finally {
     if (requestId === lastOrderRequestId) lastOrderLoading.value = false
   }
@@ -482,7 +491,7 @@ function scheduleLastOrderLoad() {
 
 function repeatLast(currentName) {
   const last = lastOrder.value
-  if (!last) { showToast('此店沒有找到上次訂單', 'error'); return }
+  if (!last) { showToast(t('home.lastOrderMissing'), 'error'); return }
   cartItems.value = [...cartItems.value, {
     _key: Date.now() + Math.random(),
     name: last.meal,
@@ -492,7 +501,7 @@ function repeatLast(currentName) {
     ...currentCartOwnerPayload(),
     storeName: last.storeName || activeStore.value?.name || ''
   }]
-  showToast(`已加入：${last.meal}`)
+  showToast(t('home.added', { name: last.meal }))
 }
 
 // ── Submit ────────────────────────────────────
@@ -513,7 +522,7 @@ function submissionFingerprint(items, currentName) {
 
 async function submitOrder(currentName) {
   if (!cartItems.value.length || submitting.value) return
-  if (!currentName) { showToast('請輸入姓名', 'error'); return }
+  if (!currentName) { showToast(t('home.nameRequired'), 'error'); return }
   const session = cartSession.value
   submitting.value = true
   try {
@@ -547,24 +556,24 @@ async function submitOrder(currentName) {
       cartPanel.value?.resetToSelf?.()
       cartOwner.value = null
     }
-    lastSubmission.value = { ids: orderIds, date: new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' }), items: submitItems.map(item => ({ ...item, isFree: dailyFreeStores.value.includes(item.storeName) })) }
-    showToast(recoveringChangedCart ? `已確認前次 ${submitCount} 筆訂單；購物車後續修改尚未送出，請核對今日訂單` : `🎉 ${submitCount} 筆訂單送出！`, 'success', {
+    lastSubmission.value = { ids: orderIds, date: getLocalDateKey(), items: submitItems.map(item => ({ ...item, isFree: dailyFreeStores.value.includes(item.storeName) })) }
+    showToast(t(recoveringChangedCart ? 'home.submittedRecovered' : 'home.submitted', { count: submitCount }), 'success', {
       duration: SUBMIT_UNDO_DURATION_MS,
-      undoLabel: '↶ 撤銷',
+      undoLabel: t('home.undoSubmit'),
       undoFn: async () => {
         if (session !== cartSession.value) return
         try {
           await cancelOrdersWithWalletRefundViaFunction({
             orderIds,
             actorName: userDisplayName.value,
-            reason: '送出後撤銷退款',
+            reason: t('home.undoReason'),
           })
           if (session !== cartSession.value) return
           if (lastSubmission.value?.ids.length === orderIds.length && lastSubmission.value.ids.every(id => orderIds.includes(id))) lastSubmission.value = null
-          showToast('已撤銷送出')
-        } catch {
+          showToast(t('home.undoDone'))
+        } catch (error) {
           if (session !== cartSession.value) return
-          showToast('撤銷失敗', 'error')
+          showToast(translateError(error, 'home.undoFailed'), 'error')
         }
       }
     })
@@ -573,10 +582,7 @@ async function submitOrder(currentName) {
   } catch (err) {
     if (session !== cartSession.value) return
     if (submissionDefinitelyRejected(err)) pendingSubmitAttempt.value = null
-    const message = err.message === 'INSUFFICIENT_WALLET_BALANCE'
-      ? '餘額不足，請聯繫總務儲值'
-      : err.message?.includes('補點') || err.message?.includes('店家已更換') ? err.message : '送出失敗，請再試一次'
-    showToast(message, 'error')
+    showToast(translateError(err, 'home.submitFailed'), 'error')
   } finally {
     if (session === cartSession.value) submitting.value = false
   }
@@ -597,6 +603,10 @@ function onCartTouchEnd(e) {
 // ── Right panel ───────────────────────────────
 const { activePanel, replacementSource, closePanel } = useHomeActions()
 watch(activePanel, () => { mobileCartOpen.value = false })
+// 管理員停用錢包時，關閉仍開著的錢包頁。
+watch(() => systemSettings.value.paymentMethods.wallet, (walletEnabled) => {
+  if (!walletEnabled && activePanel.value === 'wallet') closePanel()
+}, { immediate: true })
 watch([cartOwnerName, () => activeStore.value?.name], () => {
   scheduleLastOrderLoad()
 }, { immediate: true })
@@ -617,11 +627,11 @@ watch(() => activePanel.value === 'store-manager', syncFullMenuRequest, { immedi
 onUnmounted(() => syncFullMenuRequest(false))
 
 const panelTitle = computed(() => {
-  if (activePanel.value === 'records') return '歷史訂單'
-  if (activePanel.value === 'wallet') return '虛擬錢包'
-  if (activePanel.value === 'stats') return '統計'
-  if (activePanel.value === 'store-manager') return '今日開放店家'
-  return '點餐'
+  if (activePanel.value === 'records') return t('home.panel.records')
+  if (activePanel.value === 'wallet') return t('home.panel.wallet')
+  if (activePanel.value === 'stats') return t('home.panel.stats')
+  if (activePanel.value === 'store-manager') return t('home.panel.storeManager')
+  return t('home.panel.order')
 })
 
 function copyToCart(order) {
@@ -634,15 +644,15 @@ function copyToCart(order) {
     ...currentCartOwnerPayload(),
     storeName: order.storeName || activeStore.value?.name || ''
   }]
-  showToast(`已加入：${order.meal}`)
+  showToast(t('home.added', { name: order.meal }))
 }
 </script>
 
 <template>
   <div class="page">
     <button v-if="pendingDiningPeople" class="dining-alert" @click="router.push('/dashboard')">
-      <span class="dining-alert-summary"><i class="fas fa-right-left" aria-hidden="true"></i><span>店家異動 · <strong>{{ pendingDiningPeople }} 人待補點</strong></span></span>
-      <span class="dining-alert-action">查看名單 <i class="fas fa-chevron-right" aria-hidden="true"></i></span>
+      <span class="dining-alert-summary"><i class="fas fa-right-left" aria-hidden="true"></i><strong>{{ t('home.diningAlert', { count: pendingDiningPeople }) }}</strong></span>
+      <span class="dining-alert-action">{{ t('home.diningAlertAction') }} <i class="fas fa-chevron-right" aria-hidden="true"></i></span>
     </button>
 
     <!-- ── Header ── -->
@@ -653,14 +663,14 @@ function copyToCart(order) {
             ref="searchInput"
             v-model="searchQuery"
             class="search-input"
-            placeholder="搜尋餐點..."
+            :placeholder="t('home.searchPlaceholder')"
             @keyup.escape="searchQuery = ''"
           />
           <button
             v-if="searchQuery"
             type="button"
             class="search-clear app-search-clear"
-            aria-label="清除搜尋"
+            :aria-label="t('common.clearSearch')"
             @click="clearSearch"
           >
             <i class="fas fa-xmark" aria-hidden="true"></i>
@@ -687,7 +697,7 @@ function copyToCart(order) {
           class="daily-empty-action"
           @click="activePanel = 'store-manager'"
         >
-          選擇今日店家
+          {{ t('home.issue.pickStores') }}
         </button>
       </div>
     </div>
@@ -698,11 +708,16 @@ function copyToCart(order) {
       <!-- Center: menu + below-fold -->
       <main class="center-col">
     <section v-if="!activePanel" class="personal-order-status" aria-live="polite">
-      <div><strong>{{ myPendingNeeds.length ? '你的餐點需要重新選擇' : ordersLoading ? '正在確認你的今日訂單…' : myTodayOrders.length ? '你今天已訂 ' + myTodayOrders.length + ' 份餐點' : '你今天尚未訂餐' }}</strong>
-      <p v-if="myTodayOrders.length">{{ myTodayOrders.map(o => o.storeName + '・' + o.meal).join('、') }}</p>
-      <p>{{ dailyStoresReady ? (dailyStoresConfigured ? '今日已開放店家，可選擇餐點' : '今日店家尚未準備完成') : '正在確認今日店家…' }}</p></div>
-      <button type="button" @click="router.push('/dashboard')">查看我的訂單</button>
+      <div><strong>{{ myPendingNeeds.length ? t('home.status.needsReorder') : ordersLoading ? t('home.status.checking') : myTodayOrders.length ? t('home.status.ordered', { count: myTodayOrders.length }) : t('home.status.notOrdered') }}</strong>
+      <p v-if="myTodayOrders.length">{{ myTodayOrders.map(o => o.storeName + '・' + o.meal).join(t('home.listSeparator')) }}</p>
+      <p>{{ dailyStoresReady ? (dailyStoresConfigured ? t('home.status.storesOpen') : t('home.status.storesNotReady')) : t('home.status.storesChecking') }}</p></div>
+      <button type="button" @click="router.push('/dashboard')">{{ t('home.status.viewMyOrders') }}</button>
     </section>
+
+    <div v-if="!activePanel && cutoffBanner" class="cutoff-banner" :class="cutoffBanner.tone" role="status">
+      <i :class="['fas', cutoffBanner.icon]" aria-hidden="true"></i>
+      <span>{{ cutoffBanner.text }}</span>
+    </div>
 
         <StoreSidebar
           v-if="!activePanel"
@@ -716,7 +731,7 @@ function copyToCart(order) {
 
         <div v-if="activeStoreIsFree" class="free-store-banner" role="status">
           <span class="free-store-banner-icon" aria-hidden="true"><i class="fas fa-gift"></i></span>
-          <span><strong>此店家今日免費</strong> — 點餐不會扣錢包，金額僅供紀錄</span>
+          <span><strong>{{ t('home.freeBannerTitle') }}</strong> — {{ t('home.freeBannerText') }}</span>
         </div>
 
         <DishList
@@ -728,7 +743,7 @@ function copyToCart(order) {
           @add="addToCart"
         />
 
-        <LoadingState v-if="menuInitialLoading" title="正在載入今日菜單…" compact />
+        <LoadingState v-if="menuInitialLoading" :title="t('home.menuLoading')" compact />
 
       </main>
 
@@ -739,7 +754,7 @@ function copyToCart(order) {
       >
         <!-- 手機底部抽屜的拖曳把手：提示可下滑關閉（桌機隱藏） -->
         <div v-if="!activePanel" class="cart-drawer-handle" aria-hidden="true"></div>
-        <button v-if="!activePanel" class="cart-close" type="button" aria-label="關閉購物車" @click="mobileCartOpen = false">關閉 ×</button>
+        <button v-if="!activePanel" class="cart-close" type="button" :aria-label="t('home.closeCartAria')" @click="mobileCartOpen = false">{{ t('home.closeCart') }}</button>
 
         <CartPanel
           v-show="!activePanel"
@@ -804,12 +819,12 @@ function copyToCart(order) {
       type="button"
       class="cart-fab"
       :class="{ 'has-items': cartItems.length > 0 }"
-      :aria-label="cartItems.length > 0 ? `查看購物車，尚未送出 ${cartPortionCount} 份，應付 ${mobileCartDue} 元` : '開啟購物車'"
+      :aria-label="cartItems.length > 0 ? t('home.fabAriaItems', { portions: cartPortionCount, amount: formatMoney(mobileCartDue) }) : t('home.fabAriaEmpty')"
       @click="mobileCartOpen = true"
     >
       <span class="fab-goo-echo" aria-hidden="true"></span>
       <i class="fas fa-bag-shopping fab-icon" aria-hidden="true"></i>
-      <span class="fab-label">查看購物車{{ cartItems.length ? `・${cartPortionCount} 份・${formatMoney(mobileCartDue)}` : '' }}</span>
+      <span class="fab-label">{{ t('home.fabLabel') }}{{ cartItems.length ? t('home.fabSummary', { portions: cartPortionCount, amount: formatMoney(mobileCartDue) }) : '' }}</span>
       <Transition name="fab-count" mode="out-in">
         <span v-if="cartItems.length > 0" :key="cartPortionCount" class="fab-count">{{ cartPortionCount }}</span>
       </Transition>
@@ -820,6 +835,9 @@ function copyToCart(order) {
 
 <style scoped>
 .personal-order-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cutoff-banner { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: var(--r-md); font-size: var(--text-label); font-weight: 600; background: var(--bg-inset); color: var(--text-secondary); }
+.cutoff-banner.soon { background: var(--bg-warning); color: var(--text-warning); }
+.cutoff-banner.closed { background: var(--bg-danger); color: var(--text-danger); }
 .personal-order-status p { margin-top: 4px; font-size: var(--text-label); overflow-wrap: anywhere; }
 .personal-order-status button { flex-shrink: 0; padding: 10px; border-radius: 8px; }
 

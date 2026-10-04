@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import NavSidebar from './NavSidebar.vue'
 import { useSidebarState } from '../../composables/useSidebarState'
+import { t } from '../../i18n'
 
 const { collapsed } = useSidebarState()
 
@@ -25,7 +26,7 @@ onUnmounted(() => {
       <Transition name="banner">
         <div v-if="!isOnline" class="offline-banner" role="status">
           <span class="banner-icon">📡</span>
-          目前離線，顯示快取資料
+          {{ t('ui.offline') }}
         </div>
       </Transition>
       <slot />

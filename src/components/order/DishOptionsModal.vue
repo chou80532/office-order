@@ -11,18 +11,21 @@ import {
   normalizeOptionGroups, initialOptionSelections, toggleOptionChoice,
   isOptionChosen, optionSelectionsComplete, missingRequiredOptionLabels,
 } from '../../utils/dishOptionGroups'
-import { MAX_PRICE, MAX_NOTE_LENGTH, MAX_MEAL_LENGTH } from '../../constants'
+import { MAX_NOTE_LENGTH, MAX_MEAL_LENGTH } from '../../constants'
+import { DRINK_NOTE_ROLES, noteGroupRole } from '../../utils/defaultNoteGroups'
+import { t } from '../../i18n'
 
 const props = defineProps({ context: { type: Object, required: true } })
 const emit = defineEmits(['close', 'save'])
-const { noteGroups, requireQuickNotes, releaseQuickNotes } = useFirestore()
+const { systemSettings, noteGroups, requireQuickNotes, releaseQuickNotes } = useFirestore()
+const maxItemPrice = computed(() => systemSettings?.value?.limits?.maxItemPrice || 10_000)
 const dialog = ref(null)
 const { dish, original, store, owner } = props.context
 const variants = sortBySize(dish._variants || [dish], sizeLabel)
 const exactIndex = original ? variants.findIndex(v => menuItemKey(v, original.storeName || props.context.storeName) === original._dishKey) : -1
 const selectedIndex = ref(original ? (exactIndex >= 0 ? exactIndex : variants.findIndex(v => v.name === original.name && (v.category || '') === (original.category || ''))) : variants.length === 1 ? 0 : -1)
 const selected = computed(() => variants[selectedIndex.value] || null)
-const legacyQuantity = original && selected.value?.unit ? Number(String(original.note || '').split(selected.value.unit)[0]) : Number(String(original?.note || '').match(/^(\d+)份(?:、|$)/)?.[1] || 1)
+const legacyQuantity = original && selected.value?.unit ? Number(String(original.note || '').split(selected.value.unit)[0]) : Number(String(original?.note || '').match(/^(?:(\d+)份|×(\d+))(?:、|$)/)?.slice(1).find(Boolean) || 1)
 const quantity = ref(original?.quantity || (Number.isInteger(legacyQuantity) && legacyQuantity >= 1 && legacyQuantity <= 99 ? legacyQuantity : 1))
 const addons = ref((original?.addons || []).map(a => ({ ...a })))
 
@@ -47,21 +50,24 @@ function pickOption(group, choice) {
   optionSelections.value = toggleOptionChoice(optionSelections.value, group, choice)
 }
 const initialNote = original?.note || ''
-const quantityPrefix = selected.value?.unit ? `${quantity.value}${selected.value.unit}` : quantity.value > 1 ? `${quantity.value}份` : ''
+const quantityPrefix = selected.value?.unit ? `${quantity.value}${selected.value.unit}` : quantity.value > 1 ? t('data.portions', { count: quantity.value }) : ''
 const note = ref(original?.customNote ?? (quantityPrefix && initialNote.startsWith(quantityPrefix) ? initialNote.slice(quantityPrefix.length).replace(/^、/, '') : initialNote))
-const drink = computed(() => store?.category === 'drink' || /飲料|飲品|茶|咖啡|果汁/.test(selected.value?.category || dish.category || ''))
+const drink = computed(() => store?.category === 'drink' || /飲料|飲品|茶|咖啡|果汁|drink|tea|coffee|juice/i.test(selected.value?.category || dish.category || ''))
 const explicitTemperature = computed(() => selected.value ? dishSpecification(selected.value).temperature : '')
-const isWarm = computed(() => /^(熱|溫|温)/.test(explicitTemperature.value) || (!explicitTemperature.value && note.value.split('、').some(t => /^(熱|溫|温)(的|飲)?$/.test(t.trim()))))
+const isWarm = computed(() => /^(熱|溫|温)/.test(explicitTemperature.value) || (!explicitTemperature.value && note.value.split('、').some(token => /^(熱|溫|温)(的|飲)?$|^(hot|warm)$/i.test(token.trim()))))
+// 群組依用途（甜度、冰量、溫度、份量、其他）判斷，中英文的預設群組名稱都適用。
+const groupWithRole = role => (noteGroups.value || []).find(g => noteGroupRole(g.label) === role)
 const groups = computed(() => (noteGroups.value || []).filter(g => {
-  if (drink.value && ['其他', '備註', '其他備註', '份量'].includes(g.label)) return false
-  if (!drink.value && ['甜度', '冰量', '溫度'].includes(g.label)) return false
-  if (g.label === '溫度' && explicitTemperature.value) return false
-  if (g.label === '冰量' && isWarm.value) return false
+  const role = noteGroupRole(g.label)
+  if (drink.value && ['other', 'portion'].includes(role)) return false
+  if (!drink.value && DRINK_NOTE_ROLES.has(role)) return false
+  if (role === 'temperature' && explicitTemperature.value) return false
+  if (role === 'ice' && isWarm.value) return false
   return true
 }))
 watch([explicitTemperature, isWarm, () => noteGroups.value], ([temperature, warm]) => {
-  const excluded = (noteGroups.value || []).filter(g => (temperature && g.label === '溫度') || (warm && g.label === '冰量')).flatMap(g => g.notes)
-  note.value = note.value.split('、').filter(t => !excluded.includes(t.trim())).join('、')
+  const excluded = (noteGroups.value || []).filter(g => (temperature && noteGroupRole(g.label) === 'temperature') || (warm && noteGroupRole(g.label) === 'ice')).flatMap(g => g.notes)
+  note.value = note.value.split('、').filter(token => !excluded.includes(token.trim())).join('、')
 }, { immediate: true })
 const availableAddons = computed(() => (store?.menuItems || store?.items || []).filter(isAddonMenuItem))
 const addonKey = a => `${a.name}::${a.price}::${a.unit || ''}`
@@ -73,9 +79,11 @@ const tokens = computed(() => note.value.split('、').map(t => t.trim()).filter(
 function toggleNote(token, group) {
   let next = tokens.value.filter(t => t !== token)
   if (!tokens.value.includes(token)) {
-    if (['甜度', '冰量', '溫度', '份量'].includes(group.label)) next = next.filter(t => !group.notes.includes(t))
-    if (group.label === '冰量') next = next.filter(t => !(noteGroups.value.find(g => g.label === '溫度')?.notes || []).includes(t))
-    if (group.label === '溫度') next = next.filter(t => !(noteGroups.value.find(g => g.label === '冰量')?.notes || []).includes(t))
+    const role = noteGroupRole(group.label)
+    // 甜度、冰量、溫度、份量各只能選一個；冰量與溫度互斥。
+    if (['sugar', 'ice', 'temperature', 'portion'].includes(role)) next = next.filter(item => !group.notes.includes(item))
+    if (role === 'ice') next = next.filter(item => !(groupWithRole('temperature')?.notes || []).includes(item))
+    if (role === 'temperature') next = next.filter(item => !(groupWithRole('ice')?.notes || []).includes(item))
     next.push(token)
   }
   const value = next.join('、')
@@ -84,7 +92,7 @@ function toggleNote(token, group) {
 const result = computed(() => selected.value ? configuredCartItem({ dish: selected.value, original, owner, storeName: props.context.storeName, addons: addons.value, note: note.value, quantity: quantity.value, optionSelections: optionSelections.value }) : null)
 // 餐點名稱會帶上選到的口味與肉類，長度上限跟後端的 MAX_MEAL_LENGTH 對齊，
 // 免得選完才在送出時被伺服器退回
-const valid = computed(() => result.value && optionsDone.value && Number.isFinite(result.value.price) && Math.round(result.value.price) >= 1 && result.value.price <= MAX_PRICE && result.value.name.length <= MAX_MEAL_LENGTH && result.value.note.length <= MAX_NOTE_LENGTH && (Number.isInteger(Number(quantity.value)) && quantity.value >= 1 && quantity.value <= 99))
+const valid = computed(() => result.value && optionsDone.value && Number.isFinite(result.value.price) && Math.round(result.value.price) >= 1 && result.value.price <= maxItemPrice.value && result.value.name.length <= MAX_MEAL_LENGTH && result.value.note.length <= MAX_NOTE_LENGTH && (Number.isInteger(Number(quantity.value)) && quantity.value >= 1 && quantity.value <= 99))
 const closing = ref(false)
 let closeTimer
 let pendingAction
@@ -129,32 +137,32 @@ onUnmounted(() => {
     <dialog ref="dialog" class="dish-options" :class="{ closing }" aria-labelledby="dish-options-title" @animationend="onAnimationEnd" @cancel.prevent="requestClose()" @click="($event.target === dialog) && requestClose()">
       <form @submit.prevent="save">
         <header>
-          <div><p>{{ context.storeName }} · {{ original ? '修改餐點' : '選擇餐點' }}</p><div class="title-and-quantity"><h2 id="dish-options-title">{{ dish.name }}</h2>          <fieldset class="quantity-field" aria-label="數量"><legend v-if="selected?.unit">計價數量</legend>
+          <div><p>{{ context.storeName }} · {{ original ? t('dish.options.edit') : t('dish.options.choose') }}</p><div class="title-and-quantity"><h2 id="dish-options-title">{{ dish.name }}</h2>          <fieldset class="quantity-field" :aria-label="t('dish.options.quantity')"><legend v-if="selected?.unit">{{ t('dish.options.pricedQuantity') }}</legend>
             <div class="quantity-row">
               <span v-if="selected?.unit" class="unit-price">{{ formatMoney(selected.price) }}／{{ selected.unit }}</span>
               <div class="quantity-stepper">
-                <button type="button" aria-label="減少數量" :disabled="quantity <= 1" @click="quantity = Math.max(1, (Number(quantity) || 1) - 1)">−</button>
-                <input v-model.number="quantity" aria-label="數量" type="number" min="1" max="99" step="1" required />
-                <button type="button" aria-label="增加數量" :disabled="quantity >= 99" @click="quantity = Math.min(99, (Number(quantity) || 0) + 1)">＋</button>
+                <button type="button" :aria-label="t('dish.options.decrease')" :disabled="quantity <= 1" @click="quantity = Math.max(1, (Number(quantity) || 1) - 1)">−</button>
+                <input v-model.number="quantity" :aria-label="t('dish.options.quantity')" type="number" min="1" max="99" step="1" required />
+                <button type="button" :aria-label="t('dish.options.increase')" :disabled="quantity >= 99" @click="quantity = Math.min(99, (Number(quantity) || 0) + 1)">＋</button>
               </div>
-              <span>{{ selected?.unit || '份' }}</span>
+              <span>{{ selected?.unit || t('dish.options.portionUnit') }}</span>
             </div>
           </fieldset>
 </div></div>
-          <button type="button" class="close" autofocus aria-label="取消並關閉" @click="requestClose()">×</button>
+          <button type="button" class="close" autofocus :aria-label="t('dish.options.closeAria')" @click="requestClose()">×</button>
         </header>
         <div class="options-content">
-          <fieldset v-if="variants.length > 1"><legend>規格 <small>必選一項</small></legend>
+          <fieldset v-if="variants.length > 1"><legend>{{ t('dish.options.variant') }} <small>{{ t('dish.options.requiredOne') }}</small></legend>
             <div class="option-chips"><button v-for="(variant, i) in variants" :key="menuItemKey(variant)" type="button" :aria-pressed="selectedIndex === i" :class="{ selected: selectedIndex === i }" @click="selectedIndex = i">{{ sizeLabel(variant) || variant.name }} <strong>{{ formatMoney(variant.price) }}{{ variant.unit ? `／${variant.unit}` : '' }}</strong></button></div>
           </fieldset>
           <!-- 選項軸：口味、肉類這類同一道菜要選的面向；必選軸沒選完不能送出 -->
           <fieldset v-for="group in optionGroups" :key="group.label">
             <legend>
               {{ group.label }}
-              <small v-if="group.required && group.multiple">必選，可複選</small>
-              <small v-else-if="group.required" class="required">必選一項</small>
-              <small v-else-if="group.multiple">可複選</small>
-              <small v-else>選填</small>
+              <small v-if="group.required && group.multiple">{{ t('dish.options.requiredMulti') }}</small>
+              <small v-else-if="group.required" class="required">{{ t('dish.options.requiredOne') }}</small>
+              <small v-else-if="group.multiple">{{ t('dish.options.multi') }}</small>
+              <small v-else>{{ t('dish.options.optional') }}</small>
             </legend>
             <div class="option-chips">
               <button
@@ -167,17 +175,17 @@ onUnmounted(() => {
               >{{ choice.name }}<strong v-if="showsTotal(group)"> {{ formatMoney(choiceTotal(choice)) }}</strong><strong v-else-if="choice.price"> +{{ formatMoney(choice.price) }}</strong></button>
             </div>
           </fieldset>
-          <fieldset v-if="availableAddons.length || addons.length"><legend>加料 <small>{{ selected?.unit ? '可複選，這筆餐點另計一次費用' : '可複選，每份另計費用' }}</small></legend>
+          <fieldset v-if="availableAddons.length || addons.length"><legend>{{ t('dish.options.addons') }} <small>{{ selected?.unit ? t('dish.options.addonsPerItem') : t('dish.options.addonsPerPortion') }}</small></legend>
             <div class="option-chips"><button v-for="addon in [...availableAddons, ...addons.filter(a => !availableAddons.some(b => addonKey(a) === addonKey(b)))]" :key="addonKey(addon)" type="button" :aria-pressed="hasAddon(addon)" :class="{ selected: hasAddon(addon) }" @click="toggleAddon(addon)">{{ addon.name }} <strong>+{{ formatMoney(addon.price) }}</strong></button></div>
           </fieldset>
-          <fieldset v-for="group in groups" :key="group.label"><legend>{{ group.label }} <small>選填</small></legend>
+          <fieldset v-for="group in groups" :key="group.label"><legend>{{ group.label }} <small>{{ t('dish.options.optional') }}</small></legend>
             <div class="option-chips"><button v-for="token in group.notes" :key="token" type="button" :aria-pressed="tokens.includes(token)" :class="{ selected: tokens.includes(token) }" @click="toggleNote(token, group)">{{ token }}</button></div>
           </fieldset>
-          <label class="free-note">其他備註<textarea v-model="note" :maxlength="MAX_NOTE_LENGTH" rows="2" :placeholder="drink ? '輸入飲品的其他需求…' : '例如：餐具分開、醬料另外放…'"></textarea></label>
-          <p class="hint">{{ original ? '確認修改後才會更新購物車。' : '加入後仍可在購物車修改規格、加料與備註。' }}</p>
-          <p v-if="result && !valid" role="alert">請確認數量、金額與備註長度符合限制。</p>
+          <label class="free-note">{{ t('dish.options.otherNote') }}<textarea v-model="note" :maxlength="MAX_NOTE_LENGTH" rows="2" :placeholder="drink ? t('dish.options.drinkPlaceholder') : t('dish.options.mealPlaceholder')"></textarea></label>
+          <p class="hint">{{ original ? t('dish.options.editHint') : t('dish.options.addHint') }}</p>
+          <p v-if="result && !valid" role="alert">{{ t('dish.options.invalid') }}</p>
         </div>
-        <footer><button type="button" @click="requestClose()">取消</button><button class="confirm" type="submit" :disabled="!valid || closing">{{ original ? '儲存修改' : '加入購物車' }}{{ !selected ? ' · 請選規格' : missingOptions.length ? ` · 請選${missingOptions.join('、')}` : result ? ` · NT$ ${result.price.toLocaleString()}` : '' }}</button></footer>
+        <footer><button type="button" @click="requestClose()">{{ t('dish.options.cancel') }}</button><button class="confirm" type="submit" :disabled="!valid || closing">{{ original ? t('dish.options.save') : t('dish.options.add') }}{{ !selected ? t('dish.options.pickVariant') : missingOptions.length ? t('dish.options.pickOptions', { labels: missingOptions.join(t('home.listSeparator')) }) : result ? t('dish.options.total', { amount: formatMoney(result.price) }) : '' }}</button></footer>
       </form>
     </dialog>
   </Teleport>

@@ -12,11 +12,16 @@
 //   [{ label: '口味', choices: [{ name: '咖哩', price: 0 }] }]
 // 存的是當下的名稱與價格快照，之後店家改菜單也不會回頭改到已成立的訂單。
 
+import { formatMoney, fromMinorUnits, toMinorUnits } from './format'
+import { t } from '../i18n'
+
 export const MAX_OPTION_GROUPS = 6
 export const MAX_OPTION_CHOICES = 40
 export const MAX_OPTION_LABEL_LENGTH = 12
 export const MAX_OPTION_NAME_LENGTH = 20
-export const MAX_OPTION_PRICE = 9999
+// 加價以幣別最小單位存；這裡只擋明顯壞掉的資料，實際上限由編輯器依系統設定的單品上限檢查。
+export const MAX_OPTION_PRICE = 100_000_000
+export const DEFAULT_MAX_OPTION_PRICE = 9999
 
 const text = (value, max) => String(value ?? '').trim().slice(0, max)
 const money = (value) => {
@@ -24,6 +29,9 @@ const money = (value) => {
   if (!Number.isFinite(price)) return 0
   return Math.max(0, Math.min(MAX_OPTION_PRICE, price))
 }
+// 文字格式裡的加價寫主單位（美元 +0.5、新台幣 +20）。
+const PRICE_TEXT = '\\d{1,9}(?:\\.\\d{1,4})?'
+const plainAmount = value => String(fromMinorUnits(value))
 
 /** 從資料庫或編輯器讀進來的原始值整理成乾淨的軸陣列；壞資料一律丟掉而不是拋錯 */
 export function normalizeOptionGroups(raw) {
@@ -145,29 +153,33 @@ export function compactOptionSelections(selections) {
     }))
 }
 
-/** 編輯器用的檢查，回傳訊息陣列 */
-export function optionGroupIssues(rawGroups) {
+/** 編輯器用的檢查，回傳訊息陣列。加價以幣別最小單位的整數檢查。 */
+export function optionGroupIssues(rawGroups, { maxPrice = DEFAULT_MAX_OPTION_PRICE } = {}) {
   const errors = []
   const warnings = []
   const groups = Array.isArray(rawGroups) ? rawGroups : []
   if (!groups.length) return { errors, warnings }
-  if (groups.length > MAX_OPTION_GROUPS) errors.push(`選項群組最多 ${MAX_OPTION_GROUPS} 組`)
+  if (groups.length > MAX_OPTION_GROUPS) errors.push(t('menu.issues.tooManyGroups', { max: MAX_OPTION_GROUPS }))
   const labels = groups.map(group => String(group?.label || '').trim())
   labels.forEach((label, index) => {
-    if (!label) errors.push(`第 ${index + 1} 組缺少名稱`)
-    else if (labels.indexOf(label) !== index) errors.push(`選項群組「${label}」重複`)
+    if (!label) errors.push(t('menu.issues.groupNameMissing', { index: index + 1 }))
+    else if (labels.indexOf(label) !== index) errors.push(t('menu.issues.groupDuplicate', { label }))
   })
   groups.forEach((group) => {
-    const label = String(group?.label || '').trim() || '未命名'
+    const label = String(group?.label || '').trim() || t('data.unnamed')
     const choices = Array.isArray(group?.choices) ? group.choices : []
     const names = choices.map(choice => String(choice?.name || '').trim()).filter(Boolean)
-    if (!names.length) errors.push(`「${label}」至少要有一個選項`)
-    if (new Set(names).size !== names.length) errors.push(`「${label}」裡有重複的選項`)
-    if (group?.required && group?.multiple) warnings.push(`「${label}」同時是必選與可複選，點餐時至少要選一項`)
+    if (!names.length) errors.push(t('menu.issues.groupEmpty', { label }))
+    if (new Set(names).size !== names.length) errors.push(t('menu.issues.choiceDuplicate', { label }))
+    if (group?.required && group?.multiple) warnings.push(t('menu.issues.requiredMultiple', { label }))
     choices.forEach((choice) => {
       const price = Number(choice?.price)
-      if (choice?.price !== '' && choice?.price != null && (!Number.isInteger(price) || price < 0 || price > MAX_OPTION_PRICE)) {
-        errors.push(`「${label}」的「${String(choice?.name || '').trim() || '未命名'}」加價需為 0–${MAX_OPTION_PRICE} 的整數`)
+      if (choice?.price !== '' && choice?.price != null && (!Number.isInteger(price) || price < 0 || price > maxPrice)) {
+        errors.push(t('menu.issues.choicePrice', {
+          label,
+          choice: String(choice?.name || '').trim() || t('data.unnamed'),
+          max: formatMoney(maxPrice),
+        }))
       }
     })
   })
@@ -197,7 +209,7 @@ export function looksLikeOptionGroupLine(line) {
   if (!match) return false
   const [, , flags, body] = match
   if (flags) return true
-  return /[+＋]\s*\d{1,4}(?:\s*[/／、,，]|\s*$)/.test(body)
+  return new RegExp(`[+＋]\\s*${PRICE_TEXT}(?:\\s*[/／、,，]|\\s*$)`).test(body)
 }
 
 /** 解析一行縮排的軸定義，格式不對就回 null 讓呼叫端當成一般品項 */
@@ -212,8 +224,8 @@ export function parseOptionGroupLine(line) {
     .map(part => part.trim())
     .filter(Boolean)
     .map((part) => {
-      const priced = part.match(/^(.*?)\s*[+＋]\s*(\d{1,4})$/)
-      if (priced) return { name: priced[1].trim().slice(0, MAX_OPTION_NAME_LENGTH), price: money(priced[2]) }
+      const priced = part.match(new RegExp(`^(.*?)\\s*[+＋]\\s*(${PRICE_TEXT})$`))
+      if (priced) return { name: priced[1].trim().slice(0, MAX_OPTION_NAME_LENGTH), price: money(toMinorUnits(Number(priced[2]))) }
       return { name: part.slice(0, MAX_OPTION_NAME_LENGTH), price: 0 }
     })
     .filter(choice => choice.name)
@@ -230,7 +242,7 @@ export function parseOptionGroupLine(line) {
 export function stringifyOptionGroups(groups) {
   return normalizeOptionGroups(groups).map((group) => {
     const flags = `${group.required ? '*' : ''}${group.multiple ? '!' : ''}`
-    const body = group.choices.map(choice => (choice.price ? `${choice.name}+${choice.price}` : choice.name)).join('/')
+    const body = group.choices.map(choice => (choice.price ? `${choice.name}+${plainAmount(choice.price)}` : choice.name)).join('/')
     return `  ${group.label}${flags} ${body}`
   })
 }

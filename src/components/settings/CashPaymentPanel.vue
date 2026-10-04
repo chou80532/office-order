@@ -10,7 +10,8 @@ import { useAuth } from '../../composables/useAuth'
 import { useToast } from '../../composables/useToast'
 import { confirmDialog, promptDialog } from '../../composables/useDialog'
 import AppDatePicker from '../ui/AppDatePicker.vue'
-import { getLocalDateKey, getTaipeiDateRangeBounds, getTaipeiDayStartMs, formatMoney, formatDateCompact } from '../../utils/format'
+import { compareText, excelMoneyFormat, fromMinorUnits, getAppTimeZone, getFormatLocale, getLocalDateKey, getTaipeiDateRangeBounds, getTaipeiDayStartMs, formatMoney, formatDateCompact } from '../../utils/format'
+import { t, te, translateError } from '../../i18n'
 import { getAvatarColor } from '../../utils/avatar'
 import { useSettingsTab } from '../../composables/useSettingsTab'
 import {
@@ -27,19 +28,10 @@ const props = defineProps({
 
 const desktopToolbar = useToolbarTeleport(toRef(props, 'toolbarTarget'), 1440)
 
-const statusLabels = {
-  all: '全部',
-  pending: '待收',
-  collected: '已收',
-  cancelled: '已取消',
-}
-
-const logTypeLabels = {
-  cash_order_created: '現金單建立',
-  cash_collected: '現金已收',
-  cash_cancelled: '現金取消',
-  cash_adjustment: '現金修正',
-}
+const STATUSES = ['all', 'pending', 'collected', 'cancelled']
+const statusLabel = status => (te(`cashAdmin.status.${status}`) ? t(`cashAdmin.status.${status}`) : String(status || ''))
+const logTypeLabel = type => (te(`cashAdmin.logTypes.${type}`) ? t(`cashAdmin.logTypes.${type}`) : String(type || ''))
+const unnamed = () => t('cashAdmin.unnamed')
 
 const { userDisplayName } = useAuth()
 const { showToast } = useToast()
@@ -97,9 +89,9 @@ const filteredPayments = computed(() => paymentsInRange.value.filter(payment =>
 function groupByOwner(records, { orphan = false } = {}) {
   const groups = new Map()
   records.forEach(record => {
-    const ownerName = String(record.ownerName || record.name || '未命名').trim() || '未命名'
+    const ownerName = String(record.ownerName || record.name || '').trim() || unnamed()
     const ownerUid = String(record.ownerUid || '').trim()
-    const key = ownerUid ? `uid:${ownerUid}` : `name:${ownerName.toLocaleLowerCase('zh-TW')}`
+    const key = ownerUid ? `uid:${ownerUid}` : `name:${ownerName.toLocaleLowerCase()}`
     const amount = orphan ? Number(record.price) || 0 : paymentAmount(record)
     const current = groups.get(key) || { key, ownerName, records: [], totalAmount: 0 }
     current.records.push(record)
@@ -108,7 +100,7 @@ function groupByOwner(records, { orphan = false } = {}) {
   })
 
   return [...groups.values()].sort((a, b) =>
-    a.ownerName.localeCompare(b.ownerName, 'zh-TW', { numeric: true })
+    compareText(a.ownerName, b.ownerName, { numeric: true })
   )
 }
 
@@ -197,24 +189,28 @@ function paymentAmount(payment) {
 
 function formatDateTime(ts) {
   if (!ts) return '—'
-  return new Date(ts).toLocaleString('zh-TW')
+  return new Date(ts).toLocaleString(getFormatLocale(), { timeZone: getAppTimeZone(), hour12: false })
 }
 
 function itemSummary(items = []) {
   if (!Array.isArray(items) || items.length === 0) return '—'
   return items
-    .map(item => `${item.storeName || ''} ${item.meal || ''} ${Number(item.price || 0) ? `$${item.price}` : ''}${item.note ? `（${item.note}）` : ''}`.trim())
+    .map((item) => {
+      const meal = String(item.meal || '').trim()
+      const label = item.note ? t('data.mealWithNote', { meal, note: item.note }) : meal
+      return `${item.storeName || ''} ${label} ${Number(item.price || 0) ? formatMoney(item.price) : ''}`.trim()
+    })
     .filter(Boolean)
-    .join('；') || '—'
+    .join(t('data.itemSeparator')) || '—'
 }
 
 
 async function markCollected(payment) {
   if (!payment?.id) return
   const confirmed = await confirmDialog({
-    title: '標記已收現金？',
-    message: `確認已收到「${payment.ownerName || '未命名'}」現金 ${formatMoney(payment.remainingAmount ?? payment.amount)}？`,
-    confirmText: '確認已收',
+    title: t('cashAdmin.markTitle'),
+    message: t('cashAdmin.markMessage', { name: payment.ownerName || unnamed(), amount: formatMoney(payment.remainingAmount ?? payment.amount) }),
+    confirmText: t('cashAdmin.markConfirm'),
   })
   if (!confirmed) return
   try {
@@ -222,9 +218,9 @@ async function markCollected(payment) {
       cashPaymentId: payment.id,
       actorName: userDisplayName.value,
     })
-    showToast('已標記現金收款', 'success')
+    showToast(t('cashAdmin.marked'), 'success')
   } catch (error) {
-    showToast(error.message || '標記已收失敗', 'error')
+    showToast(translateError(error, 'cashAdmin.markFailed'), 'error')
   }
 }
 
@@ -235,10 +231,10 @@ async function markAllCollected() {
   if (!targets.length || bulkCollecting.value) return
   const total = targets.reduce((sum, payment) => sum + (Number(payment.remainingAmount ?? payment.amount) || 0), 0)
   const confirmed = await confirmDialog({
-    title: '全部標記已收？',
-    message: `將 ${targets.length} 筆待收現金（合計 ${formatMoney(total)}）全部標記為已收？`,
-    detail: '每筆都會寫入後端收款 Log。',
-    confirmText: '全部已收',
+    title: t('cashAdmin.markAllTitle'),
+    message: t('cashAdmin.markAllMessage', { count: targets.length, amount: formatMoney(total) }),
+    detail: t('cashAdmin.markAllDetail'),
+    confirmText: t('cashAdmin.markAllConfirm'),
   })
   if (!confirmed) return
   bulkCollecting.value = true
@@ -253,7 +249,7 @@ async function markAllCollected() {
     }
   }
   bulkCollecting.value = false
-  showToast(failed ? `已收 ${done} 筆，${failed} 筆失敗` : `已全部標記 ${done} 筆已收`, failed ? 'warning' : 'success')
+  showToast(failed ? t('cashAdmin.markAllPartial', { done, failed }) : t('cashAdmin.markAllDone', { count: done }), failed ? 'warning' : 'success')
 }
 
 function formatDateOnly(ts) {
@@ -263,18 +259,18 @@ function formatDateOnly(ts) {
 
 function formatTimeOnly(ts) {
   if (!ts) return ''
-  return new Date(ts).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return new Date(ts).toLocaleTimeString(getFormatLocale(), { timeZone: getAppTimeZone(), hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
 async function cancelPayment(payment) {
   if (!payment?.id) return
   const reason = await promptDialog({
-    title: '取消現金應收',
-    message: `取消「${payment.ownerName || '未命名'}」現金應收的原因？`,
-    defaultValue: '現金單取消',
+    title: t('cashAdmin.cancelTitle'),
+    message: t('cashAdmin.cancelMessage', { name: payment.ownerName || unnamed() }),
+    defaultValue: t('cashAdmin.cancelDefault'),
     variant: 'danger',
-    confirmText: '取消應收',
-    cancelText: '返回',
+    confirmText: t('cashAdmin.cancelConfirm'),
+    cancelText: t('cashAdmin.back'),
   })
   if (!reason) return
   try {
@@ -283,9 +279,9 @@ async function cancelPayment(payment) {
       actorName: userDisplayName.value,
       reason,
     })
-    showToast('已取消現金應收', 'success')
+    showToast(t('cashAdmin.cancelled'), 'success')
   } catch (error) {
-    showToast(error.message || '取消現金應收失敗', 'error')
+    showToast(translateError(error, 'cashAdmin.cancelFailed'), 'error')
   }
 }
 
@@ -294,9 +290,9 @@ async function repairCashPayment(order) {
   repairingOrderId.value = order.id
   try {
     await createMissingCashPaymentViaFunction({ orderId: order.id, actorName: userDisplayName.value })
-    showToast('已補建現金應收', 'success')
+    showToast(t('cashAdmin.repaired'), 'success')
   } catch (error) {
-    showToast(error.message || '補建現金應收失敗', 'error')
+    showToast(translateError(error, 'cashAdmin.repairFailed'), 'error')
   } finally {
     repairingOrderId.value = ''
   }
@@ -320,20 +316,20 @@ async function exportExcel() {
     const paymentRows = [
       ...filteredPayments.value.map(payment => ({
         timestamp: paymentTimestamp(payment) ? new Date(paymentTimestamp(payment)) : '',
-        ownerName: payment.ownerName || '未命名',
-        status: statusLabels[normalizeStatus(payment.status)] || normalizeStatus(payment.status),
-        amount: paymentAmount(payment),
+        ownerName: payment.ownerName || unnamed(),
+        status: statusLabel(normalizeStatus(payment.status)),
+        amount: fromMinorUnits(paymentAmount(payment)),
         orderedByName: payment.orderedByName || '',
-        storeNames: normalizeList(payment.storeNames).join('、'),
+        storeNames: normalizeList(payment.storeNames).join(t('common.listSeparator')),
         items: itemSummary(payment.items),
         cashPaymentId: payment.id || payment.cashPaymentId || '',
         orderIds: normalizeList(payment.orderIds).join(', '),
       })),
       ...orphanCashOrders.value.map(order => ({
         timestamp: Number(order.timestamp || order.createdTimestamp) ? new Date(Number(order.timestamp || order.createdTimestamp)) : '',
-        ownerName: order.ownerName || order.name || '未命名',
-        status: '未建應收',
-        amount: Number(order.price) || 0,
+        ownerName: order.ownerName || order.name || unnamed(),
+        status: t('cashAdmin.noReceivable'),
+        amount: fromMinorUnits(order.price),
         orderedByName: order.orderedByName || '',
         storeNames: order.storeName || '',
         items: itemSummary([{ meal: order.meal, price: order.price, note: order.note, storeName: order.storeName }]),
@@ -342,49 +338,50 @@ async function exportExcel() {
       })),
     ]
     await downloadXlsx({
-      filename: `現金收款_${filters.from}_${filters.to}.xlsx`,
+      filename: t('cashAdmin.export.fileName', { from: filters.from, to: filters.to }),
       sheets: [
         {
-          name: '現金應收',
-          title: '現金應收報表',
-          subtitle: `${filters.from} 至 ${filters.to}｜狀態：${statusLabels[filters.status]}${filters.keyword ? `｜關鍵字：${filters.keyword}` : ''}`,
+          name: t('cashAdmin.export.paymentsSheet'),
+          title: t('cashAdmin.export.paymentsTitle'),
+          subtitle: t('cashAdmin.export.paymentsSubtitle', { from: filters.from, to: filters.to, status: statusLabel(filters.status) })
+            + (filters.keyword ? t('cashAdmin.export.keyword', { keyword: filters.keyword }) : ''),
           summary: [
-            { label: '待收總額', value: summary.value.pendingAmount },
-            { label: '待收筆數', value: summary.value.pendingCount },
-            { label: '已收總額', value: summary.value.collectedAmount },
-            { label: '已取消', value: summary.value.cancelledCount },
+            { label: t('cashAdmin.export.pendingAmount'), value: fromMinorUnits(summary.value.pendingAmount) },
+            { label: t('cashAdmin.export.pendingCount'), value: summary.value.pendingCount, numFmt: '0' },
+            { label: t('cashAdmin.export.collectedAmount'), value: fromMinorUnits(summary.value.collectedAmount) },
+            { label: t('cashAdmin.export.cancelledCount'), value: summary.value.cancelledCount, numFmt: '0' },
           ],
           columns: [
-            { header: '時間', key: 'timestamp', width: 21, numFmt: 'yyyy/mm/dd hh:mm:ss' },
-            { header: '對象', key: 'ownerName', width: 14 },
-            { header: '狀態', key: 'status', width: 12 },
-            { header: '金額', key: 'amount', width: 14, numFmt: '#,##0;[Red]-#,##0;0' },
-            { header: '建立者', key: 'orderedByName', width: 14 },
-            { header: '店家', key: 'storeNames', width: 24, wrapText: true },
-            { header: '品項明細', key: 'items', width: 40, wrapText: true },
-            { header: '現金應收 ID', key: 'cashPaymentId', width: 24 },
-            { header: '關聯訂單', key: 'orderIds', width: 28, wrapText: true },
+            { header: t('cashAdmin.export.time'), key: 'timestamp', width: 21, numFmt: 'yyyy/mm/dd hh:mm:ss' },
+            { header: t('cashAdmin.export.owner'), key: 'ownerName', width: 14 },
+            { header: t('cashAdmin.export.status'), key: 'status', width: 12 },
+            { header: t('cashAdmin.export.amount'), key: 'amount', width: 14, numFmt: excelMoneyFormat() },
+            { header: t('cashAdmin.export.createdBy'), key: 'orderedByName', width: 14 },
+            { header: t('cashAdmin.export.stores'), key: 'storeNames', width: 24, wrapText: true },
+            { header: t('cashAdmin.export.items'), key: 'items', width: 40, wrapText: true },
+            { header: t('cashAdmin.export.paymentId'), key: 'cashPaymentId', width: 24 },
+            { header: t('cashAdmin.export.orders'), key: 'orderIds', width: 28, wrapText: true },
           ],
           rows: paymentRows,
         },
         {
-          name: '現金流水',
-          title: '現金流水 Log',
-          subtitle: `${filters.from} 至 ${filters.to}`,
+          name: t('cashAdmin.export.logsSheet'),
+          title: t('cashAdmin.export.logsTitle'),
+          subtitle: t('cashAdmin.export.logsSubtitle', { from: filters.from, to: filters.to }),
           columns: [
-            { header: '時間', key: 'timestamp', width: 21, numFmt: 'yyyy/mm/dd hh:mm:ss' },
-            { header: '對象', key: 'ownerName', width: 14 },
-            { header: '類型', key: 'type', width: 16 },
-            { header: '金額', key: 'amount', width: 14, numFmt: '#,##0;[Red]-#,##0;0' },
-            { header: '操作人', key: 'operatorName', width: 14 },
-            { header: '原因', key: 'reason', width: 40, wrapText: true },
-            { header: '關聯訂單', key: 'orderIds', width: 28, wrapText: true },
+            { header: t('cashAdmin.export.time'), key: 'timestamp', width: 21, numFmt: 'yyyy/mm/dd hh:mm:ss' },
+            { header: t('cashAdmin.export.owner'), key: 'ownerName', width: 14 },
+            { header: t('cashAdmin.export.type'), key: 'type', width: 16 },
+            { header: t('cashAdmin.export.amount'), key: 'amount', width: 14, numFmt: excelMoneyFormat() },
+            { header: t('cashAdmin.export.operator'), key: 'operatorName', width: 14 },
+            { header: t('cashAdmin.export.reason'), key: 'reason', width: 40, wrapText: true },
+            { header: t('cashAdmin.export.orders'), key: 'orderIds', width: 28, wrapText: true },
           ],
           rows: exportLogs.map(log => ({
             timestamp: logTimestamp(log) ? new Date(logTimestamp(log)) : '',
-            ownerName: log.ownerName || '未命名',
-            type: logTypeLabels[log.type] || log.type,
-            amount: Number(log.amount) || 0,
+            ownerName: log.ownerName || unnamed(),
+            type: logTypeLabel(log.type),
+            amount: fromMinorUnits(log.amount),
             operatorName: log.operatorName || '',
             reason: log.reason || '',
             orderIds: normalizeList(log.orderIds || log.orderId).join(', '),
@@ -393,10 +390,10 @@ async function exportExcel() {
         },
       ],
     })
-    showToast('現金收款 XLSX 已匯出', 'success')
+    showToast(t('cashAdmin.export.done'), 'success')
   } catch (error) {
     console.error(error)
-    showToast(`現金收款 XLSX 匯出失敗：${error?.message || '未知錯誤'}`, 'error')
+    showToast(t('cashAdmin.export.failed', { message: translateError(error) }), 'error')
   } finally {
     exporting.value = false
   }
@@ -417,7 +414,7 @@ async function loadCashLogs() {
     loadError.value = ''
   } catch (error) {
     console.error('[Firestore] cash logs query error:', error)
-    showToast('讀取現金流水失敗，請稍後再試', 'error')
+    showToast(t('cashAdmin.logsFailed'), 'error')
   } finally {
     logsLoading.value = false
   }
@@ -440,7 +437,7 @@ async function loadCashOrders() {
   } catch (error) {
     if (requestId !== cashOrdersRequestId) return
     console.error('[Firestore] cash orders query error:', error)
-    showToast('讀取現金訂單失敗，請稍後再試', 'error')
+    showToast(t('cashAdmin.ordersFailed'), 'error')
   } finally {
     if (requestId === cashOrdersRequestId) cashOrdersLoading.value = false
   }
@@ -453,7 +450,7 @@ watch(() => [filters.from, filters.to], () => {
 onMounted(() => {
   const handleSnapshotError = (error) => {
     console.error('[Firestore] cash admin snapshot error:', error)
-    loadError.value = error?.message || '無法讀取現金帳務'
+    loadError.value = translateError(error, 'cashAdmin.loadFailedGeneric')
     loading.value = false
   }
 
@@ -484,21 +481,21 @@ onUnmounted(() => {
     >
     <section class="panel filter-panel" :class="{ 'teleported-toolbar': desktopToolbar }">
       <div class="report-head filter-head">
-        <span class="filter-head-label"><i class="fas fa-filter" aria-hidden="true"></i> 篩選條件</span>
+        <span class="filter-head-label"><i class="fas fa-filter" aria-hidden="true"></i> {{ t('cashAdmin.filters') }}</span>
       </div>
       <div class="filters">
-        <input v-model="filters.keyword" class="cash-search app-search-input" placeholder="搜尋姓名、店家、餐點..." maxlength="40" />
+        <input v-model="filters.keyword" class="cash-search app-search-input" :placeholder="t('cashAdmin.searchPlaceholder')" :aria-label="t('cashAdmin.searchPlaceholder')" maxlength="40" />
         <div class="cash-filter-actions">
-          <AppDatePicker v-model="filters.from" @change="rangeEndPicker?.openPicker()" :max="filters.to" :compact="desktopToolbar" aria-label="現金紀錄開始日期" />
-          <AppDatePicker ref="rangeEndPicker" v-model="filters.to" :min="filters.from" :compact="desktopToolbar" aria-label="現金紀錄結束日期" />
-          <select v-model="filters.status">
-            <option v-for="(label, status) in statusLabels" :key="status" :value="status">{{ label }}</option>
+          <AppDatePicker v-model="filters.from" @change="rangeEndPicker?.openPicker()" :max="filters.to" :compact="desktopToolbar" :aria-label="t('cashAdmin.startAria')" />
+          <AppDatePicker ref="rangeEndPicker" v-model="filters.to" :min="filters.from" :compact="desktopToolbar" :aria-label="t('cashAdmin.endAria')" />
+          <select v-model="filters.status" :aria-label="t('cashAdmin.statusAria')">
+            <option v-for="status in STATUSES" :key="status" :value="status">{{ statusLabel(status) }}</option>
           </select>
           <button class="query-btn" :disabled="logsLoading" @click="loadCashLogs">
-            {{ logsLoading ? '查詢中…' : '查詢' }}
+            {{ logsLoading ? t('cashAdmin.querying') : t('cashAdmin.query') }}
           </button>
           <button class="export-btn" :disabled="exporting" @click="exportExcel">
-            {{ exporting ? '匯出中…' : '匯出 XLSX' }}
+            {{ exporting ? t('wallet.exporting') : t('wallet.exportXlsx') }}
           </button>
         </div>
       </div>
@@ -506,87 +503,87 @@ onUnmounted(() => {
     </Teleport>
 
     <!-- KPI 卡列（設計稿 5：待收現金橘金漸層／今日已收／待收筆數） -->
-    <section class="summary-row summary-strip summary-three summary-success" aria-label="現金收款總覽">
+    <section class="summary-row summary-strip summary-three summary-success" :aria-label="t('cashAdmin.overviewAria')">
       <div class="ckpi ckpi-pending summary-cell is-primary">
-        <span class="ckpi-label"><i class="fas fa-hand-holding-dollar" aria-hidden="true"></i>待收現金</span>
+        <span class="ckpi-label"><i class="fas fa-hand-holding-dollar" aria-hidden="true"></i>{{ t('cashAdmin.pendingCash') }}</span>
         <strong class="ckpi-value summary-money">{{ formatMoney(summary.pendingAmount) }}</strong>
       </div>
       <div class="ckpi summary-cell">
-        <span class="ckpi-label">今日已收</span>
+        <span class="ckpi-label">{{ t('cashAdmin.collectedToday') }}</span>
         <strong class="ckpi-value ckpi-green">{{ formatMoney(todayCollectedAmount) }}</strong>
-        <small class="ckpi-sub">區間已收 {{ formatMoney(summary.collectedAmount) }}</small>
+        <small class="ckpi-sub">{{ t('cashAdmin.collectedInRange', { amount: formatMoney(summary.collectedAmount) }) }}</small>
       </div>
       <div class="ckpi summary-cell">
-        <span class="ckpi-label">待收筆數</span>
-        <strong class="ckpi-value summary-money">{{ summary.pendingCount }} <span class="ckpi-unit">筆</span></strong>
-        <small class="ckpi-sub">已取消 {{ summary.cancelledCount }} 筆</small>
+        <span class="ckpi-label">{{ t('cashAdmin.pendingCountLabel') }}</span>
+        <strong class="ckpi-value summary-money">{{ summary.pendingCount }} <span class="ckpi-unit">{{ t('cashAdmin.countUnit', { count: summary.pendingCount }) }}</span></strong>
+        <small class="ckpi-sub">{{ t('cashAdmin.cancelledCount', { count: summary.cancelledCount }) }}</small>
       </div>
     </section>
 
     <section class="panel">
       <div class="report-head">
         <div>
-          <h2>現金應收列表</h2>
-          <p>只有管理員可在此查看與操作。</p>
+          <h2>{{ t('cashAdmin.listTitle') }}</h2>
+          <p>{{ t('cashAdmin.listDesc') }}</p>
         </div>
         <div class="head-actions">
-          <span class="count-chip">{{ filteredPayments.length + orphanCashOrders.length }} 筆</span>
+          <span class="count-chip">{{ t('cashAdmin.count', { count: filteredPayments.length + orphanCashOrders.length }) }}</span>
           <button
             class="collect-all-btn"
             :disabled="bulkCollecting || pendingPayments.length === 0"
             @click="markAllCollected"
           >
             <i class="fas fa-check-double" aria-hidden="true"></i>
-            {{ bulkCollecting ? '收款中…' : '全部標記已收' }}
+            {{ bulkCollecting ? t('cashAdmin.collecting') : t('cashAdmin.markAll') }}
           </button>
         </div>
       </div>
 
-      <div v-if="loadError" class="error-banner">現金帳務讀取失敗：{{ loadError }}</div>
+      <div v-if="loadError" class="error-banner">{{ t('cashAdmin.loadError', { message: loadError }) }}</div>
       <div v-if="orphanCashOrders.length" class="orphan-list">
-        <div class="orphan-notice">偵測到 {{ orphanCashOrders.length }} 筆訂單尚未建立現金應收，請補建後再收款。</div>
+        <div class="orphan-notice">{{ t('cashAdmin.orphanNotice', { count: orphanCashOrders.length }) }}</div>
         <details v-for="group in orphanGroups" :key="`orphan-${group.key}`" class="person-group orphan-group">
           <summary class="person-summary">
             <div class="person-identity">
               <span class="person-chevron"><i class="fa-solid fa-chevron-right"></i></span>
               <strong>{{ group.ownerName }}</strong>
-              <span class="group-count">{{ group.records.length }} 筆未建應收</span>
+              <span class="group-count">{{ t('cashAdmin.orphanCount', { count: group.records.length }) }}</span>
             </div>
-            <div class="group-total"><span>金額合計</span><strong>{{ formatMoney(group.totalAmount) }}</strong></div>
+            <div class="group-total"><span>{{ t('cashAdmin.groupTotal') }}</span><strong>{{ formatMoney(group.totalAmount) }}</strong></div>
           </summary>
           <div class="person-orders">
             <article v-for="order in group.records" :key="order.id" class="payment-card orphan">
               <div class="payment-main">
                 <div>
                   <div class="title-row">
-                    <strong>{{ order.storeName || '未指定店家' }}</strong>
-                    <span class="status-badge">未建應收</span>
+                    <strong>{{ order.storeName || t('common.unknownStore') }}</strong>
+                    <span class="status-badge">{{ t('cashAdmin.noReceivable') }}</span>
                   </div>
                   <p class="meta">{{ formatDateTime(order.timestamp) }}</p>
-                  <p class="items">{{ order.meal || '—' }}{{ order.note ? `（${order.note}）` : '' }}</p>
+                  <p class="items">{{ order.note ? t('data.mealWithNote', { meal: order.meal || '—', note: order.note }) : (order.meal || '—') }}</p>
                 </div>
                 <div class="amount-box">
-                  <span>應收</span>
+                  <span>{{ t('cashAdmin.receivable') }}</span>
                   <strong>{{ formatMoney(order.price) }}</strong>
                 </div>
               </div>
               <div class="actions">
                 <button class="repair-btn" :disabled="Boolean(repairingOrderId)" @click="repairCashPayment(order)">
-                  {{ repairingOrderId === order.id ? '補建中…' : '補建現金應收' }}
+                  {{ repairingOrderId === order.id ? t('cashAdmin.repairing') : t('cashAdmin.repair') }}
                 </button>
               </div>
             </article>
           </div>
         </details>
       </div>
-      <LoadingState v-if="loading || cashOrdersLoading" title="正在載入現金應收…" description="正在整理所選期間的應收明細，請稍候。" />
-      <StatusNotice v-else-if="filteredPayments.length === 0 && orphanCashOrders.length === 0" title="目前沒有符合條件的現金應收。" description="可調整日期或成員篩選，查看其他收款資料。" />
-      <div v-else class="pay-table" role="table" aria-label="現金應收列表">
+      <LoadingState v-if="loading || cashOrdersLoading" :title="t('cashAdmin.loadingTitle')" :description="t('cashAdmin.loadingText')" />
+      <StatusNotice v-else-if="filteredPayments.length === 0 && orphanCashOrders.length === 0" :title="t('cashAdmin.emptyTitle')" :description="t('cashAdmin.emptyText')" />
+      <div v-else class="pay-table" role="table" :aria-label="t('cashAdmin.tableAria')">
         <div class="pay-head-row" role="row">
-          <span class="col-owner">成員・店家</span>
-          <span class="col-items">餐點</span>
-          <span class="col-amount">金額</span>
-          <span class="col-action">收款</span>
+          <span class="col-owner">{{ t('cashAdmin.colOwner') }}</span>
+          <span class="col-items">{{ t('cashAdmin.colItems') }}</span>
+          <span class="col-amount">{{ t('cashAdmin.colAmount') }}</span>
+          <span class="col-action">{{ t('cashAdmin.colAction') }}</span>
         </div>
         <div
           v-for="payment in flatPayments"
@@ -599,31 +596,31 @@ onUnmounted(() => {
             <span
               class="pay-avatar"
               aria-hidden="true"
-              :style="{ background: getAvatarColor(payment.ownerName || '未命名') }"
-            >{{ String(payment.ownerName || '未').slice(0, 1) }}</span>
+              :style="{ background: getAvatarColor(payment.ownerName || unnamed()) }"
+            >{{ String(payment.ownerName || unnamed()).slice(0, 1) }}</span>
             <div class="owner-main">
-              <strong class="owner-name">{{ payment.ownerName || '未命名' }}</strong>
-              <small class="owner-store">{{ (payment.storeNames || []).join('、') || '現金訂單' }}</small>
+              <strong class="owner-name">{{ payment.ownerName || unnamed() }}</strong>
+              <small class="owner-store">{{ (payment.storeNames || []).join(t('common.listSeparator')) || t('cashAdmin.cashOrder') }}</small>
             </div>
           </div>
           <div class="col-items" :title="itemSummary(payment.items)">
             {{ itemSummary(payment.items) }}
-            <small class="pay-meta">由 {{ payment.orderedByName || '—' }} 建立・{{ formatDateTime(paymentTimestamp(payment)) }}</small>
+            <small class="pay-meta">{{ t('cashAdmin.createdBy', { name: payment.orderedByName || '—', time: formatDateTime(paymentTimestamp(payment)) }) }}</small>
           </div>
           <div class="col-amount" :class="normalizeStatus(payment.status)">{{ formatMoney(paymentAmount(payment)) }}</div>
           <div class="col-action">
             <template v-if="normalizeStatus(payment.status) === 'pending'">
               <button class="collect-btn" @click="markCollected(payment)">
-                <i class="fas fa-hand-holding-dollar" aria-hidden="true"></i> 標記已收
+                <i class="fas fa-hand-holding-dollar" aria-hidden="true"></i> {{ t('cashAdmin.mark') }}
               </button>
-              <button class="cancel-icon-btn" title="取消應收" aria-label="取消應收" @click="cancelPayment(payment)">
+              <button class="cancel-icon-btn" :title="t('cashAdmin.cancelReceivable')" :aria-label="t('cashAdmin.cancelReceivable')" @click="cancelPayment(payment)">
                 <i class="fas fa-ban" aria-hidden="true"></i>
               </button>
             </template>
             <span v-else-if="normalizeStatus(payment.status) === 'collected'" class="done-chip">
-              <i class="fas fa-check" aria-hidden="true"></i> 已收款
+              <i class="fas fa-check" aria-hidden="true"></i> {{ t('cashAdmin.collectedChip') }}
             </span>
-            <span v-else class="cancel-chip">已取消</span>
+            <span v-else class="cancel-chip">{{ t('cashAdmin.cancelledChip') }}</span>
           </div>
         </div>
       </div>
@@ -633,22 +630,22 @@ onUnmounted(() => {
     <div class="info-bar" role="note">
       <i class="fas fa-circle-info" aria-hidden="true"></i>
       <span>
-        標記「已收」後，該筆會轉為已結，並計入今日已收現金；也可到
-        <button type="button" class="info-link" @click="activeTab = 'wallet'">儲值錢包</button>
-        將現金轉為儲值餘額。
+        {{ t('cashAdmin.infoBefore') }}
+        <button type="button" class="info-link" @click="activeTab = 'wallet'">{{ t('cashAdmin.infoLink') }}</button>
+        {{ t('cashAdmin.infoAfter') }}
       </span>
     </div>
 
     <section class="panel">
       <div class="report-head">
         <div>
-          <h2>收款紀錄 <span class="head-range">{{ formatDateCompact(filters.from) }} – {{ formatDateCompact(filters.to) }}</span></h2>
-          <p>建立、收款、取消都由後端寫入，不可竄改。</p>
+          <h2>{{ t('cashAdmin.logTitle') }} <span class="head-range">{{ formatDateCompact(filters.from) }} – {{ formatDateCompact(filters.to) }}</span></h2>
+          <p>{{ t('cashAdmin.logDesc') }}</p>
         </div>
-        <span class="count-chip">{{ filteredLogs.length }} 筆</span>
+        <span class="count-chip">{{ t('cashAdmin.count', { count: filteredLogs.length }) }}</span>
       </div>
-      <LoadingState v-if="logsLoading" title="正在載入現金流水…" description="正在取得收款與取消紀錄，請稍候。" />
-      <StatusNotice v-else-if="filteredLogs.length === 0" title="目前沒有現金流水。" description="此篩選區間尚無收款紀錄。" />
+      <LoadingState v-if="logsLoading" :title="t('cashAdmin.logsLoadingTitle')" :description="t('cashAdmin.logsLoadingText')" />
+      <StatusNotice v-else-if="filteredLogs.length === 0" :title="t('cashAdmin.noLogsTitle')" :description="t('cashAdmin.noLogsText')" />
       <div v-else class="log-list">
         <div v-for="log in filteredLogs" :key="log.id" class="log-row">
           <div class="log-date">
@@ -656,15 +653,15 @@ onUnmounted(() => {
             <small class="mono">{{ formatTimeOnly(logTimestamp(log)) }}</small>
           </div>
           <div class="log-main">
-            <strong class="log-owner">{{ log.ownerName || '未命名' }}</strong>
+            <strong class="log-owner">{{ log.ownerName || unnamed() }}</strong>
             <small class="log-desc">
-              {{ log.reason || logTypeLabels[log.type] || log.type }}
+              {{ log.reason || logTypeLabel(log.type) }}
               <span class="log-type-tag" :class="{ plus: Number(log.amount) > 0, minus: Number(log.amount) < 0 }">
-                {{ logTypeLabels[log.type] || log.type }}
+                {{ logTypeLabel(log.type) }}
               </span>
             </small>
           </div>
-          <div class="log-operator">經手：{{ log.operatorName || '—' }}</div>
+          <div class="log-operator">{{ t('cashAdmin.handledBy', { name: log.operatorName || '—' }) }}</div>
           <div class="log-amount mono" :class="{ plus: Number(log.amount) > 0, minus: Number(log.amount) < 0 }">
             {{ Number(log.amount) > 0 ? '+' : (Number(log.amount) < 0 ? '-' : '') }}{{ formatMoney(Math.abs(Number(log.amount) || 0)) }}
           </div>

@@ -168,3 +168,93 @@ test('Functions emulator loads, enforces auth/admin checks, and completes a memb
   assert.equal((await orderRef.get()).exists, false)
   await t.test('prevents cross-user cancellation and allows the owner to cancel', () => {})
 })
+
+test('System settings are admin-managed, enforced by order callables, and setup stays closed once an admin exists', async (t) => {
+  const memberToken = await signIn(member.email, member.password)
+  const adminToken = await signIn(administrator.email, administrator.password)
+  const systemRef = db.collection('settings').doc('system')
+  t.after(() => systemRef.delete())
+
+  const status = await callFunction('getSetupStatus')
+  assert.deepEqual(status.body?.result, { needsSetup: false, setupEnabled: false })
+  const setupAttempt = await callFunction('completeFirstAdminSetup', {
+    setupToken: 'fictional-emulator-token-0123456789',
+    memberName: 'Setup Intruder',
+  }, memberToken)
+  assert.ok(['FAILED_PRECONDITION', 'PERMISSION_DENIED'].includes(setupAttempt.body?.error?.status), JSON.stringify(setupAttempt.body))
+  assert.equal((await db.collection('users').doc(member.uid).get()).data().isAdmin, false)
+  await t.test('keeps first-run setup closed after an administrator exists', () => {})
+
+  const memberUpdate = await callFunction('updateSystemSettings', { settings: { proxyOrdering: 'off' } }, memberToken)
+  assert.equal(memberUpdate.body?.error?.status, 'PERMISSION_DENIED')
+  const invalidUpdate = await callFunction('updateSystemSettings', { settings: { timeZone: 'Invalid/Zone' } }, adminToken)
+  assert.equal(invalidUpdate.body?.error?.status, 'INVALID_ARGUMENT')
+  const adminUpdate = await callFunction('updateSystemSettings', { settings: { proxyOrdering: 'admins' } }, adminToken)
+  assert.equal(adminUpdate.body?.error, undefined, `System settings update failed: ${JSON.stringify(adminUpdate.body)}`)
+  assert.equal((await systemRef.get()).data().proxyOrdering, 'admins')
+  await t.test('allows only admins to change validated system settings', () => {})
+
+  const proxyItem = {
+    name: 'Emulator Test Meal',
+    price: 120,
+    storeName: 'Emulator Test Store',
+    ownerName: otherMember.memberName,
+    ownerUid: otherMember.uid,
+    paymentMethod: 'cash',
+  }
+  const memberProxy = await callFunction('createOrdersWithWalletDebit', {
+    requestId: `emulator-proxy-${randomBytes(8).toString('hex')}`,
+    items: [proxyItem],
+  }, memberToken)
+  assert.equal(memberProxy.body?.error?.status, 'PERMISSION_DENIED')
+  assert.equal(memberProxy.body?.error?.message, 'PROXY_ORDERING_DISABLED')
+
+  const adminProxy = await callFunction('createOrdersWithWalletDebit', {
+    requestId: `emulator-proxy-${randomBytes(8).toString('hex')}`,
+    items: [proxyItem],
+  }, adminToken)
+  assert.equal(adminProxy.body?.error, undefined, `Admin proxy order failed: ${JSON.stringify(adminProxy.body)}`)
+  const cancelled = await callFunction('cancelOrdersWithWalletRefund', { orderIds: adminProxy.body.result.orderIds }, adminToken)
+  assert.equal(cancelled.body?.error, undefined, `Admin proxy cancellation failed: ${JSON.stringify(cancelled.body)}`)
+  await t.test('rejects member proxy orders when only admins may proxy order', () => {})
+})
+
+test('Cutoff, proxy consent and public config callables work against the emulator', async (t) => {
+  const memberToken = await signIn(member.email, member.password)
+  const otherToken = await signIn(otherMember.email, otherMember.password)
+  const adminToken = await signIn(administrator.email, administrator.password)
+  const systemRef = db.collection('settings').doc('system')
+  const dailyRef = db.collection('settings').doc('daily')
+  t.after(async () => {
+    await systemRef.delete()
+    await dailyRef.update({ cutoff: admin.firestore.FieldValue.delete() })
+  })
+
+  const config = await callFunction('getPublicConfig')
+  assert.equal(config.body?.error, undefined, JSON.stringify(config.body))
+  assert.deepEqual(Object.keys(config.body.result).sort(), ['branding', 'locale', 'needsSetup', 'registration', 'setupEnabled'])
+  await t.test('exposes only public settings before sign-in', () => {})
+
+  const memberCutoff = await callFunction('setDailyCutoff', { time: 'now' }, memberToken)
+  assert.equal(memberCutoff.body?.error?.status, 'PERMISSION_DENIED')
+  const closeNow = await callFunction('setDailyCutoff', { time: 'now' }, adminToken)
+  assert.equal(closeNow.body?.error, undefined, JSON.stringify(closeNow.body))
+  const meal = { name: 'Emulator Test Meal', price: 120, storeName: 'Emulator Test Store', ownerName: member.memberName, ownerUid: member.uid, paymentMethod: 'cash' }
+  const closedOrder = await callFunction('createOrdersWithWalletDebit', { requestId: `emulator-closed-${randomBytes(8).toString('hex')}`, items: [meal] }, memberToken)
+  assert.equal(closedOrder.body?.error?.message, 'ORDERING_CLOSED')
+  const reopen = await callFunction('setDailyCutoff', { time: '' }, adminToken)
+  assert.equal(reopen.body?.result?.cutoffTime, '')
+  await t.test('closes ordering for members when an admin closes it now', () => {})
+
+  await callFunction('updateSystemSettings', { settings: { proxyOrdering: 'consent' } }, adminToken)
+  const proxyItem = { ...meal, ownerName: otherMember.memberName, ownerUid: otherMember.uid }
+  const withoutConsent = await callFunction('createOrdersWithWalletDebit', { requestId: `emulator-consent-${randomBytes(8).toString('hex')}`, items: [proxyItem] }, memberToken)
+  assert.equal(withoutConsent.body?.error?.message, 'PROXY_CONSENT_REQUIRED')
+  const consent = await callFunction('updateMyPreferences', { allowProxyOrders: true }, otherToken)
+  assert.equal(consent.body?.error, undefined, JSON.stringify(consent.body))
+  const withConsent = await callFunction('createOrdersWithWalletDebit', { requestId: `emulator-consent-${randomBytes(8).toString('hex')}`, items: [proxyItem] }, memberToken)
+  assert.equal(withConsent.body?.error, undefined, JSON.stringify(withConsent.body))
+  const cancelled = await callFunction('cancelOrdersWithWalletRefund', { orderIds: withConsent.body.result.orderIds }, adminToken)
+  assert.equal(cancelled.body?.error, undefined, JSON.stringify(cancelled.body))
+  await t.test('requires consent before members order for each other in consent mode', () => {})
+})

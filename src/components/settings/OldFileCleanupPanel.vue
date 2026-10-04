@@ -3,10 +3,10 @@
     <!-- 資料量總覽卡（設計稿 5 的用量卡；顯示真實訂單筆數與已查詢可清理筆數） -->
     <div class="usage-card">
       <div class="usage-left">
-        <span class="usage-label">訂單資料量</span>
+        <span class="usage-label">{{ t('cleanup.usageLabel') }}</span>
         <strong class="usage-value">
           <template v-if="isLoadingRange"><span class="mini-spinner"></span></template>
-          <template v-else>{{ dataRange.total.toLocaleString() }} <small>筆</small></template>
+          <template v-else>{{ formatCount(dataRange.total) }} <small>{{ t('cleanup.recordsUnit', { count: dataRange.total }) }}</small></template>
         </strong>
         <span v-if="dataRange.total > 0" class="usage-range mono">{{ dataRange.earliest }} – {{ dataRange.latest }}</span>
       </div>
@@ -15,51 +15,51 @@
           <span class="usage-seg cleanable" :style="{ width: `${cleanablePct}%` }"></span>
         </div>
         <div class="usage-legend">
-          <span class="legend-item"><span class="legend-dot cleanable"></span>已查詢可清理 {{ cleanablePct }}%</span>
-          <span class="legend-item"><span class="legend-dot rest"></span>其他資料</span>
+          <span class="legend-item"><span class="legend-dot cleanable"></span>{{ t('cleanup.cleanablePct', { pct: cleanablePct }) }}</span>
+          <span class="legend-item"><span class="legend-dot rest"></span>{{ t('cleanup.otherData') }}</span>
         </div>
       </div>
       <div class="usage-release">
-        <span class="usage-release-label">預計可清理</span>
-        <strong class="usage-release-value">{{ selectedCleanableCount.toLocaleString() }} 筆</strong>
-        <small class="usage-release-hint">先查詢或預覽才會計入</small>
+        <span class="usage-release-label">{{ t('cleanup.releaseLabel') }}</span>
+        <strong class="usage-release-value">{{ t('cleanup.records', { count: formatCount(selectedCleanableCount) }) }}</strong>
+        <small class="usage-release-hint">{{ t('cleanup.releaseHint') }}</small>
       </div>
     </div>
 
-    <p class="cleanup-section-label">可清理項目</p>
+    <p class="cleanup-section-label">{{ t('cleanup.sectionLabel') }}</p>
 
     <section class="cleanup-card history-cleanup">
       <div class="item-head">
         <span class="item-icon order" aria-hidden="true"><i class="fas fa-receipt"></i></span>
         <div class="item-title-wrap">
-          <h3>歷史訂單清理</h3>
-          <p>依日期查詢並刪除未連動帳務的舊訂單，適合清除早期歷史紀錄。</p>
+          <h3>{{ t('cleanup.historyTitle') }}</h3>
+          <p>{{ t('cleanup.historyDesc') }}</p>
         </div>
         <span class="item-size" :class="{ ready: queryResult?.length }">
-          {{ queryResult?.length ? `${queryResult.length.toLocaleString()} 筆` : '未查詢' }}
+          {{ queryResult?.length ? t('cleanup.records', { count: formatCount(queryResult.length) }) : t('cleanup.notQueried') }}
         </span>
       </div>
 
       <div class="scope-note history-note">
         <i class="fas fa-circle-info"></i>
-        <span>只刪除未連動現金或錢包的 <code>orders</code>；若含帳務，請使用下方完整清理。</span>
+        <span>{{ t('cleanup.historyScopeBefore') }}<code>orders</code>{{ t('cleanup.historyScopeAfter') }}</span>
       </div>
 
     <!-- Date range picker -->
     <div class="date-range-row">
       <div class="date-field">
-        <label>開始日期</label>
-        <AppDatePicker v-model="startDate" @change="rangeEndPicker?.openPicker()" aria-label="歷史訂單清理開始日期" />
+        <label>{{ t('cleanup.startDate') }}</label>
+        <AppDatePicker v-model="startDate" @change="rangeEndPicker?.openPicker()" :aria-label="t('cleanup.historyStartAria')" />
       </div>
       <div class="date-sep"><i class="fas fa-arrow-right"></i></div>
       <div class="date-field">
-        <label>結束日期</label>
-        <AppDatePicker ref="rangeEndPicker" v-model="endDate" aria-label="歷史訂單清理結束日期" />
+        <label>{{ t('cleanup.endDate') }}</label>
+        <AppDatePicker ref="rangeEndPicker" v-model="endDate" :aria-label="t('cleanup.historyEndAria')" />
       </div>
       <button class="btn btn-secondary query-btn" @click="queryOrders" :disabled="isQuerying || !startDate || !endDate">
         <span v-if="isQuerying" class="mini-spinner"></span>
         <template v-else><i class="fas fa-search"></i></template>
-        查詢歷史訂單
+        {{ t('cleanup.queryHistory') }}
       </button>
     </div>
 
@@ -67,45 +67,45 @@
     <div v-if="queryResult !== null" class="result-section">
       <div v-if="queryResult.length === 0" class="no-data">
         <i class="fas fa-check-circle" style="color:var(--mint)"></i>
-        <span>該日期區間內沒有任何訂單</span>
+        <span>{{ t('cleanup.noOrdersInRange') }}</span>
       </div>
       <template v-else>
         <div class="result-summary">
           <div class="summary-stat">
             <span class="stat-number">{{ queryResult.length }}</span>
-            <span class="stat-label">筆訂單</span>
+            <span class="stat-label">{{ t('cleanup.ordersStat') }}</span>
           </div>
           <div class="summary-stat">
             <span class="stat-number">{{ uniqueStores }}</span>
-            <span class="stat-label">家店</span>
+            <span class="stat-label">{{ t('cleanup.storesStat') }}</span>
           </div>
           <div class="summary-stat">
             <span class="stat-number">{{ formatMoney(totalAmount) }}</span>
-            <span class="stat-label">總金額</span>
+            <span class="stat-label">{{ t('cleanup.totalStat') }}</span>
           </div>
         </div>
 
         <div class="result-list">
           <div v-for="order in queryResult.slice(0, 50)" :key="order.id" class="order-row">
             <span class="order-date">{{ formatDate(order.timestamp) }}</span>
-            <span class="order-store">{{ order.storeName || '未指定' }}</span>
+            <span class="order-store">{{ order.storeName || t('cleanup.unknownStore') }}</span>
             <span class="order-meal">{{ order.meal }}</span>
             <span class="order-price">{{ formatMoney(order.price || 0) }}</span>
           </div>
           <div v-if="queryResult.length > 50" class="more-hint">
-            ...還有 {{ queryResult.length - 50 }} 筆未顯示
+            {{ t('cleanup.moreHidden', { count: queryResult.length - 50 }) }}
           </div>
         </div>
 
         <div class="delete-section">
           <div class="delete-warning">
             <i class="fas fa-exclamation-triangle"></i>
-            <span>將嘗試刪除 <strong>{{ queryResult.length }}</strong> 筆未連動帳務的歷史訂單，此操作不可復原！</span>
+            <span>{{ t('cleanup.deleteWarning', { count: queryResult.length }) }}</span>
           </div>
           <button class="btn btn-danger delete-btn" @click="deleteOrders" :disabled="isDeleting">
             <span v-if="isDeleting" class="mini-spinner"></span>
             <template v-else><i class="fas fa-trash-alt"></i></template>
-            {{ isDeleting ? `刪除中 (${deleteProgress}/${queryResult.length})...` : `確認刪除 ${queryResult.length} 筆訂單` }}
+            {{ isDeleting ? t('cleanup.deleting', { done: deleteProgress, total: queryResult.length }) : t('cleanup.deleteCount', { count: queryResult.length }) }}
           </button>
         </div>
       </template>
@@ -116,49 +116,49 @@
       <div class="item-head">
         <span class="item-icon linked" aria-hidden="true"><i class="fas fa-link-slash"></i></span>
         <div class="item-title-wrap">
-          <h3>完整連動資料清理</h3>
-          <p>刪除區間內的訂單及所有連動帳務，並反向校正錢包餘額。</p>
+          <h3>{{ t('cleanup.linkedTitle') }}</h3>
+          <p>{{ t('cleanup.linkedDesc') }}</p>
         </div>
         <span class="item-size" :class="{ ready: cleanupPreview?.documentCount }">
-          {{ cleanupPreview?.documentCount ? `${cleanupPreview.documentCount.toLocaleString()} 筆` : '未預覽' }}
+          {{ cleanupPreview?.documentCount ? t('cleanup.records', { count: formatCount(cleanupPreview.documentCount) }) : t('cleanup.notPreviewed') }}
         </span>
       </div>
 
       <div class="scope-note linked-note">
         <i class="fas fa-shield-halved"></i>
-        <span>包含現金應收、現金 Log、錢包 Log 與請求；不會刪除會員、店家或菜單。</span>
+        <span>{{ t('cleanup.linkedScope') }}</span>
       </div>
 
       <div class="datetime-row">
         <div class="date-field grow">
-          <label>開始時間</label>
-          <AppDatePicker v-model="cleanupFrom" mode="datetime" :max="cleanupTo" aria-label="帳務連動清理開始時間" @change="cleanupPreview = null" />
+          <label>{{ t('cleanup.startTime') }}</label>
+          <AppDatePicker v-model="cleanupFrom" mode="datetime" :max="cleanupTo" :aria-label="t('cleanup.linkedStartAria')" @change="cleanupPreview = null" />
         </div>
         <div class="date-sep"><i class="fas fa-arrow-right"></i></div>
         <div class="date-field grow">
-          <label>結束時間</label>
-          <AppDatePicker v-model="cleanupTo" mode="datetime" :min="cleanupFrom" aria-label="帳務連動清理結束時間" @change="cleanupPreview = null" />
+          <label>{{ t('cleanup.endTime') }}</label>
+          <AppDatePicker v-model="cleanupTo" mode="datetime" :min="cleanupFrom" :aria-label="t('cleanup.linkedEndAria')" @change="cleanupPreview = null" />
         </div>
         <button class="btn btn-secondary" :disabled="isPreviewingCleanup || !cleanupFrom || !cleanupTo" @click="previewLinkedCleanup">
           <span v-if="isPreviewingCleanup" class="mini-spinner"></span>
           <template v-else><i class="fas fa-magnifying-glass"></i></template>
-          預覽影響
+          {{ t('cleanup.preview') }}
         </button>
       </div>
 
       <div v-if="cleanupPreview" class="cleanup-preview">
         <div class="preview-grid">
-          <div><strong>{{ cleanupPreview.counts.orders }}</strong><span>訂單</span></div>
-          <div><strong>{{ cleanupPreview.counts.cashPayments }}</strong><span>現金應收</span></div>
-          <div><strong>{{ cleanupPreview.counts.cashLogs }}</strong><span>現金 Log</span></div>
-          <div><strong>{{ cleanupPreview.counts.walletLogs }}</strong><span>錢包 Log</span></div>
-          <div><strong>{{ cleanupPreview.counts.walletRequests }}</strong><span>錢包請求</span></div>
+          <div><strong>{{ cleanupPreview.counts.orders }}</strong><span>{{ t('cleanup.countOrders') }}</span></div>
+          <div><strong>{{ cleanupPreview.counts.cashPayments }}</strong><span>{{ t('cleanup.countCashPayments') }}</span></div>
+          <div><strong>{{ cleanupPreview.counts.cashLogs }}</strong><span>{{ t('cleanup.countCashLogs') }}</span></div>
+          <div><strong>{{ cleanupPreview.counts.walletLogs }}</strong><span>{{ t('cleanup.countWalletLogs') }}</span></div>
+          <div><strong>{{ cleanupPreview.counts.walletRequests }}</strong><span>{{ t('cleanup.countWalletRequests') }}</span></div>
         </div>
 
         <div v-if="cleanupPreview.walletAdjustments.length" class="wallet-corrections">
-          <strong>錢包餘額校正</strong>
+          <strong>{{ t('cleanup.walletCorrections') }}</strong>
           <div v-for="wallet in cleanupPreview.walletAdjustments" :key="wallet.walletId" class="correction-row">
-            <span>{{ wallet.ownerName || wallet.walletId }}（{{ wallet.logCount }} 筆）</span>
+            <span>{{ t('cleanup.walletLogCount', { name: wallet.ownerName || wallet.walletId, count: wallet.logCount }) }}</span>
             <b :class="{ positive: wallet.balanceCorrection > 0 }">
               {{ wallet.balanceCorrection > 0 ? '+' : '' }}{{ formatMoney(wallet.balanceCorrection) }}
             </b>
@@ -166,9 +166,9 @@
         </div>
 
         <div v-if="!cleanupPreview.canDelete" class="limit-warning">
-          此區間需要 {{ cleanupPreview.writeCount }} 次寫入，超過單次上限 {{ cleanupPreview.maxWrites }}，請縮小時間區間。
+          {{ t('cleanup.writeLimit', { writes: cleanupPreview.writeCount, max: cleanupPreview.maxWrites }) }}
         </div>
-        <div v-else-if="cleanupPreview.documentCount === 0" class="no-matches">此區間沒有可清理的訂單或帳務資料。</div>
+        <div v-else-if="cleanupPreview.documentCount === 0" class="no-matches">{{ t('cleanup.noMatches') }}</div>
         <button
           v-else
           class="btn btn-danger linked-delete-btn"
@@ -177,7 +177,7 @@
         >
           <span v-if="isDeletingLinked" class="mini-spinner"></span>
           <template v-else><i class="fas fa-trash-can"></i></template>
-          {{ isDeletingLinked ? '正在刪除並校正帳務…' : `刪除 ${cleanupPreview.documentCount} 筆連動資料` }}
+          {{ isDeletingLinked ? t('cleanup.deletingLinked') : t('cleanup.deleteLinked', { count: cleanupPreview.documentCount }) }}
         </button>
       </div>
     </section>
@@ -194,7 +194,8 @@ import { db } from '../../firestore'
 import { useToast } from '../../composables/useToast'
 import { confirmDialog, promptDialog } from '../../composables/useDialog'
 import AppDatePicker from '../ui/AppDatePicker.vue'
-import { getTaipeiDateTimeMs, getTaipeiDateTimeValue, getTaipeiDayStartMs, getTaipeiDateRangeBounds, formatMoney, formatDateShort } from '../../utils/format'
+import { getAppTimeZone, getFormatLocale, getTaipeiDateTimeMs, getTaipeiDateTimeValue, getTaipeiDayStartMs, getTaipeiDateRangeBounds, formatMoney, formatDateShort } from '../../utils/format'
+import { t, translateError } from '../../i18n'
 import {
   deleteUnlinkedOrdersViaFunction,
   deleteTimeRangeDataViaFunction,
@@ -202,6 +203,7 @@ import {
 } from '../../services/adminFunctions'
 
 const { showToast } = useToast()
+const formatCount = value => Number(value || 0).toLocaleString(getFormatLocale())
 
 const startDate = ref('')
 const endDate = ref('')
@@ -221,8 +223,8 @@ const loadDataRange = async () => {
       dataRange.total = allSnap.size
     }
   } catch (e) {
-    console.error('查詢資料區間失敗:', e)
-    showToast('查詢資料區間失敗，下方的日期範圍可能不準', 'error')
+    console.error('[Cleanup] range load failed', e)
+    showToast(t('cleanup.rangeFailed'), 'error')
   }
   finally { isLoadingRange.value = false }
 }
@@ -238,13 +240,14 @@ const cleanupTo = ref('')
 const cleanupPreview = ref(null)
 const isPreviewingCleanup = ref(false)
 const isDeletingLinked = ref(false)
+// 後端驗證用的固定字串；畫面上要使用者輸入的是各語言的 cleanup.confirmPhrase。
 const LINKED_CLEANUP_CONFIRMATION = '刪除選取區間資料'
 
 const now = new Date()
 cleanupFrom.value = getTaipeiDateTimeValue(new Date(getTaipeiDayStartMs(now)))
 cleanupTo.value = getTaipeiDateTimeValue(now)
 
-const uniqueStores = computed(() => queryResult.value ? new Set(queryResult.value.map(o => o.storeName || '未指定')).size : 0)
+const uniqueStores = computed(() => queryResult.value ? new Set(queryResult.value.map(o => o.storeName || '')).size : 0)
 const totalAmount = computed(() => queryResult.value ? queryResult.value.reduce((sum, o) => sum + (Number(o.price) || 0), 0) : 0)
 
 // 用量卡：以「已查詢／預覽出的可刪筆數」對照訂單總量，數字皆為真實查詢結果
@@ -258,8 +261,8 @@ const cleanablePct = computed(() => {
 
 const formatDate = (ts) => {
   if (!ts) return '-'
-  return new Date(ts).toLocaleString('zh-TW', {
-    timeZone: 'Asia/Taipei',
+  return new Date(ts).toLocaleString(getFormatLocale(), {
+    timeZone: getAppTimeZone(),
     month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
   })
 }
@@ -272,7 +275,7 @@ const cleanupRange = () => ({
 const previewLinkedCleanup = async () => {
   const range = cleanupRange()
   if (!Number.isFinite(range.from) || !Number.isFinite(range.to) || range.from >= range.to) {
-    showToast('開始時間必須早於結束時間', 'error')
+    showToast(t('cleanup.timeOrder'), 'error')
     return
   }
   isPreviewingCleanup.value = true
@@ -280,7 +283,7 @@ const previewLinkedCleanup = async () => {
   try {
     cleanupPreview.value = await previewTimeRangeCleanupViaFunction(range)
   } catch (error) {
-    showToast(error?.message || '無法預覽區間資料', 'error')
+    showToast(translateError(error, 'cleanup.previewFailed'), 'error')
   } finally {
     isPreviewingCleanup.value = false
   }
@@ -289,16 +292,16 @@ const previewLinkedCleanup = async () => {
 const deleteLinkedCleanup = async () => {
   if (!cleanupPreview.value?.canDelete || cleanupPreview.value.documentCount === 0 || isDeletingLinked.value) return
   const confirmation = await promptDialog({
-    title: '完整連動資料清理',
-    message: `將永久刪除 ${cleanupPreview.value.documentCount} 筆資料並校正錢包餘額，此操作不可復原。`,
-    detail: `請輸入「${LINKED_CLEANUP_CONFIRMATION}」以確認刪除。`,
-    placeholder: LINKED_CLEANUP_CONFIRMATION,
+    title: t('cleanup.linkedTitle'),
+    message: t('cleanup.linkedConfirmMessage', { count: cleanupPreview.value.documentCount }),
+    detail: t('cleanup.linkedConfirmDetail', { phrase: t('cleanup.confirmPhrase') }),
+    placeholder: t('cleanup.confirmPhrase'),
     variant: 'danger',
-    confirmText: '永久刪除',
+    confirmText: t('cleanup.deleteForever'),
   })
   if (confirmation === null) return
-  if (confirmation.trim() !== LINKED_CLEANUP_CONFIRMATION) {
-    showToast('確認文字不正確，已取消刪除', 'error')
+  if (confirmation.trim().toLowerCase() !== t('cleanup.confirmPhrase').toLowerCase()) {
+    showToast(t('cleanup.phraseMismatch'), 'error')
     return
   }
 
@@ -308,11 +311,11 @@ const deleteLinkedCleanup = async () => {
       ...cleanupRange(),
       confirmation: LINKED_CLEANUP_CONFIRMATION,
     })
-    showToast(`已刪除 ${result.documentCount.toLocaleString()} 筆連動資料`, 'success')
+    showToast(t('cleanup.linkedDeleted', { count: formatCount(result.documentCount) }), 'success')
     cleanupPreview.value = null
     await loadDataRange()
   } catch (error) {
-    showToast(error?.message || '區間資料刪除失敗', 'error')
+    showToast(translateError(error, 'cleanup.linkedFailed'), 'error')
     await previewLinkedCleanup()
   } finally {
     isDeletingLinked.value = false
@@ -322,12 +325,12 @@ const deleteLinkedCleanup = async () => {
 const queryOrders = async () => {
   if (!startDate.value || !endDate.value) return
   const { startMs, endMs } = getTaipeiDateRangeBounds(startDate.value, endDate.value)
-  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs >= endMs) { showToast('開始日期不能晚於結束日期', 'error'); return }
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs >= endMs) { showToast(t('cleanup.dateOrder'), 'error'); return }
   isQuerying.value = true; queryResult.value = null
   try {
     const snap = await getDocs(query(collection(db, 'orders'), where('timestamp', '>=', startMs), where('timestamp', '<', endMs)))
     queryResult.value = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.timestamp - b.timestamp)
-  } catch (err) { showToast('查詢失敗: ' + err.message, 'error') }
+  } catch (err) { showToast(t('cleanup.queryFailed', { message: translateError(err) }), 'error') }
   finally { isQuerying.value = false }
 }
 
@@ -335,11 +338,11 @@ const deleteOrders = async () => {
   if (!queryResult.value?.length) return
   const count = queryResult.value.length
   const confirmed = await confirmDialog({
-    title: '刪除舊訂單？',
-    message: `確定要刪除這 ${count} 筆訂單嗎？`,
-    detail: '此操作不可復原。',
+    title: t('cleanup.deleteTitle'),
+    message: t('cleanup.deleteMessage', { count }),
+    detail: t('cleanup.deleteDetail'),
     variant: 'danger',
-    confirmText: `刪除 ${count} 筆`,
+    confirmText: t('cleanup.deleteConfirm', { count }),
   })
   if (!confirmed) return
   isDeleting.value = true; deleteProgress.value = 0
@@ -350,13 +353,13 @@ const deleteOrders = async () => {
       await deleteUnlinkedOrdersViaFunction(chunk.map(order => order.id))
       deleteProgress.value = Math.min(i + batchSize, queryResult.value.length)
     }
-    showToast(`已成功刪除 ${count} 筆訂單`)
+    showToast(t('cleanup.deleted', { count }))
     queryResult.value = null; startDate.value = ''; endDate.value = ''
     await loadDataRange()
   } catch (err) {
     const message = err.message === 'FINANCIAL_ORDERS_REQUIRE_LINKED_CLEANUP'
-      ? '此區間包含錢包或現金帳務，請改用下方「完整連動資料清理」。'
-      : `刪除失敗: ${err.message}`
+      ? translateError(err)
+      : t('cleanup.deleteFailed', { message: translateError(err) })
     showToast(message, 'error')
   }
   finally { isDeleting.value = false; deleteProgress.value = 0 }

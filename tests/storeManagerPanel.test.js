@@ -3,9 +3,9 @@ import { nextTick, ref } from 'vue'
 import { mountComponent } from './helpers/mountComponent'
 import StoreManagerPanel from '../src/components/modals/StoreManagerPanel.vue'
 
-const mocks = vi.hoisted(() => ({ data: null, save: vi.fn() }))
+const mocks = vi.hoisted(() => ({ data: null, save: vi.fn(), admin: true }))
 vi.mock('../src/composables/useFirestore', () => ({ useFirestore: () => mocks.data }))
-vi.mock('../src/composables/useAuth', () => ({ useAuth: () => ({ userUid: ref('member') }) }))
+vi.mock('../src/composables/useAuth', () => ({ useAuth: () => ({ userUid: ref('member'), isAdmin: ref(mocks.admin) }) }))
 vi.mock('../src/services/walletFunctions', () => ({ cancelOrdersWithWalletRefundViaFunction: (...args) => mocks.save(...args) }))
 vi.mock('../src/services/storePopularity', () => ({ getCachedStorePopularity: () => ({ orders: [], now: Date.now() }), loadStorePopularity: vi.fn() }))
 vi.mock('../src/components/ui/ConfirmDialog.vue', () => ({ default: { render: () => null } }))
@@ -14,6 +14,7 @@ let mounted
 const mount = () => (mounted = mountComponent(StoreManagerPanel, { allStores: [{ name: 'Old' }, { name: 'New' }], replacementSource: 'Old' }))
 beforeEach(() => {
   mocks.save.mockReset().mockResolvedValue({ ok: true })
+  mocks.admin = true
   mocks.data = {
     dailyStores: ref(['Old']), dailyFreeStores: ref(['Old']), dailyStoresReady: ref(true), dailyStoresError: ref(''),
     todayOrders: ref([{ storeName: 'Old' }]), ordersLoading: ref(false), menuLoading: ref(false),
@@ -57,5 +58,18 @@ describe('設定店家草稿與交易', () => {
     mocks.data.ordersLoading.value = true
     await state.save(true)
     expect(mocks.save).not.toHaveBeenCalled()
+  })
+  it('一般成員不能切換免費，送出時只沿用仍保留店家的原免費設定', async () => {
+    mocks.admin = false
+    mocks.data.dailyStores.value = ['Old', 'Kept']
+    mocks.data.dailyFreeStores.value = ['Old', 'Kept']
+    mocks.data.todayOrders.value = []
+    const { state } = mount()
+    state.toggle('New'); state.toggleFree('New'); state.toggleFree('Kept')
+    expect(state.isFreeSelected('New')).toBe(false)
+    expect(state.isFreeSelected('Kept')).toBe(true)
+    state.toggle('Kept'); state.toggle('Kept')
+    await state.save()
+    expect(mocks.save.mock.calls[0][0].dailyStoreSettings).toMatchObject({ activeStores: ['New', 'Kept'], freeStores: ['Kept'] })
   })
 })

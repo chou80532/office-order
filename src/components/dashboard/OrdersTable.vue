@@ -1,15 +1,17 @@
 <script setup>
 import LoadingState from '../ui/LoadingState.vue'
 import StatusNotice from '../ui/StatusNotice.vue'
-import { formatMoney } from '../../utils/format'
+import { compareText, formatMoney, fromMinorUnits, moneyInputStep, parseMoneyInput, toMinorUnits } from '../../utils/format'
 import OrderRow from '../order/OrderRow.vue'
 import OrderRowHead from '../order/OrderRowHead.vue'
 import { ref, reactive, computed } from 'vue'
 import { useAuth } from '../../composables/useAuth'
 import { useToast } from '../../composables/useToast'
+import { useFirestore } from '../../composables/useFirestore'
 import { confirmDialog } from '../../composables/useDialog'
 import { isAddonMenuItem } from '../../utils/menuCategories'
 import StoreFilterTabs from './StoreFilterTabs.vue'
+import { t } from '../../i18n'
 
 const props = defineProps({
   orders:      { type: Array,   default: () => [] },
@@ -22,16 +24,19 @@ const emit = defineEmits(['delete', 'cancel', 'toggle-free', 'copy-order', 'save
 
 const { isAdmin, userUid } = useAuth()
 const { showToast } = useToast()
+const { systemSettings } = useFirestore()
+const maxItemPrice = computed(() => systemSettings?.value?.limits?.maxItemPrice || 10_000)
 
-const compareZh = (a, b) => String(a || '').localeCompare(String(b || ''), 'zh-TW')
-const categoryLabels = { lunch: '午餐', drink: '飲料' }
 const storeMetaMap = computed(() => {
   const map = new Map()
   props.allStores.forEach(store => { if (store?.name) map.set(store.name, store) })
   return map
 })
-const storeCategoryLabel = (storeName) => categoryLabels[storeMetaMap.value.get(storeName)?.category] || '未分類'
-const phoneHref = phone => `tel:${String(phone || '').replace(/\D/g, '')}`
+const storeCategoryLabel = (storeName) => {
+  const category = storeMetaMap.value.get(storeName)?.category
+  return t(`common.storeCategory.${category === 'lunch' || category === 'drink' ? category : 'other'}`)
+}
+const phoneHref = phone => `tel:${String(phone || '').replace(/[^\d+]/g, '')}`
 const mapHref = (address, storeName) => {
   const destination = String(address || storeName || '').trim()
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`
@@ -42,7 +47,7 @@ const isOwnOrder = (o) => o.uid === userUid.value
 // ── 店家分頁 + 搜尋 ───────────────────────────
 const searchQuery = ref('')
 
-const orderStoreName = (order) => order.storeName || '未指定店家'
+const orderStoreName = (order) => order.storeName || t('common.unknownStore')
 
 const searchedOrders = computed(() => {
   const keyword = searchQuery.value.trim().toLowerCase()
@@ -66,7 +71,7 @@ const deleteEvent = (order) => (canCancel(order) ? 'cancel' : 'delete')
 const sortedStoreEntries = computed(() => {
   const groups = new Map()
   searchedOrders.value.forEach(order => {
-    const name = order.storeName || '未指定店家'
+    const name = orderStoreName(order)
     if (!groups.has(name)) groups.set(name, [])
     groups.get(name).push(order)
   })
@@ -89,7 +94,7 @@ const sortedStoreEntries = computed(() => {
       const catOrder = { lunch: 0, drink: 1, other: 2 }
       const byCategory = (catOrder[a.category] ?? 99) - (catOrder[b.category] ?? 99)
       if (byCategory !== 0) return byCategory
-      return compareZh(a.name, b.name)
+      return compareText(a.name, b.name)
     })
 })
 
@@ -106,22 +111,23 @@ const editMenuItems = computed(() => {
 })
 
 // 記下開始編輯時的內容：沒改過就直接關，改過才問。
+// editForm.price 是輸入框裡的主單位金額（美元可有小數），儲存時才換回最小單位。
 let editSnapshot = ''
 const editFingerprint = () => JSON.stringify([editForm.meal, editForm.note, editForm.price])
 
 function startEdit(order) {
   editingId.value = order.id
-  Object.assign(editForm, { meal: order.meal, note: order.note || '', price: Number(order.price) || 0 })
+  Object.assign(editForm, { meal: order.meal, note: order.note || '', price: fromMinorUnits(order.price) })
   editSnapshot = editFingerprint()
 }
 
 async function cancelEdit() {
   if (editingId.value && editFingerprint() !== editSnapshot && !await confirmDialog({
-    title: '放棄這次修改？',
-    message: '餐點內容已經改過但還沒儲存。',
+    title: t('dashboard.ordersTable.discardTitle'),
+    message: t('dashboard.ordersTable.discardMessage'),
     variant: 'danger',
-    confirmText: '放棄修改',
-    cancelText: '繼續編輯',
+    confirmText: t('dashboard.ordersTable.discardConfirm'),
+    cancelText: t('dashboard.ordersTable.keepEditing'),
   })) return
   editingId.value = null
   editSnapshot = ''
@@ -130,12 +136,14 @@ function onSelectMeal(e) {
   const selected = editMenuItems.value.find(i => i.name === e.target.value)
   if (!selected) return
   editForm.meal = selected.name
-  editForm.price = Number(selected.price) || 0
+  editForm.price = fromMinorUnits(selected.price)
 }
 function saveEdit(id) {
   if (!editForm.meal.trim()) return
-  const price = Math.round(Number(editForm.price) || 0)
-  if (price <= 0) { showToast('金額需大於 0', 'error'); return }
+  const price = parseMoneyInput(editForm.price)
+  if (!Number.isFinite(price)) { showToast(t('dashboard.ordersTable.amountInvalid'), 'error'); return }
+  if (price <= 0) { showToast(t('dashboard.ordersTable.amountPositive'), 'error'); return }
+  if (price > maxItemPrice.value) { showToast(t('dashboard.ordersTable.amountTooHigh', { amount: formatMoney(maxItemPrice.value) }), 'error'); return }
   emit('save-edit', { id, meal: editForm.meal.trim(), note: editForm.note.trim(), price })
   editingId.value = null
   editSnapshot = ''
@@ -146,7 +154,7 @@ function clearSearch() { searchQuery.value = '' }
 
 <template>
   <div class="orders-table">
-    <h2 class="sr-only">今日訂單</h2>
+    <h2 class="sr-only">{{ t('dashboard.title') }}</h2>
     <!-- 店家分頁 + 搜尋 -->
     <div class="table-toolbar">
       <!-- 手機版改由 DashboardView 掛在 KPI 卡片下方，這裡隱藏 -->
@@ -159,8 +167,8 @@ function clearSearch() { searchQuery.value = '' }
       />
       <div class="search-box app-search-shell">
         <i class="fas fa-magnifying-glass" aria-hidden="true"></i>
-        <input v-model="searchQuery" type="text" placeholder="搜尋成員或餐點…" aria-label="搜尋成員或餐點" />
-        <button v-if="searchQuery" type="button" class="search-clear app-search-clear" aria-label="清除搜尋" @click="clearSearch">
+        <input v-model="searchQuery" type="text" :placeholder="t('dashboard.ordersTable.searchPlaceholder')" :aria-label="t('dashboard.ordersTable.searchAria')" />
+        <button v-if="searchQuery" type="button" class="search-clear app-search-clear" :aria-label="t('common.clearSearch')" @click="clearSearch">
           <i class="fas fa-xmark" aria-hidden="true"></i>
         </button>
       </div>
@@ -172,12 +180,12 @@ function clearSearch() { searchQuery.value = '' }
     <div class="table-card order-rows">
       <OrderRowHead v-if="searchedOrders.length" />
 
-      <LoadingState v-if="loading && orders.length === 0" title="正在載入今日訂單…" paper />
+      <LoadingState v-if="loading && orders.length === 0" :title="t('dashboard.ordersTable.loading')" paper />
 
       <StatusNotice
         v-else-if="searchedOrders.length === 0"
-        :title="orders.length === 0 ? '目前沒有訂單' : '沒有符合條件的訂單'"
-        :description="orders.length === 0 ? '有人下單之後會即時出現在這裡。' : '試著清掉搜尋字或換一個店家分頁。'"
+        :title="orders.length === 0 ? t('dashboard.ordersTable.emptyTitle') : t('dashboard.ordersTable.noMatchTitle')"
+        :description="orders.length === 0 ? t('dashboard.ordersTable.emptyText') : t('dashboard.ordersTable.noMatchText')"
       />
 
       <template v-for="group in sortedStoreEntries" :key="group.name">
@@ -196,21 +204,21 @@ function clearSearch() { searchQuery.value = '' }
                 :href="mapHref(group.address, group.name)"
                 target="_blank"
                 rel="noopener noreferrer"
-                :title="`在 Google 地圖開啟：${group.address}`"
-                :aria-label="`在 Google 地圖開啟 ${group.name} 的地址：${group.address}`"
+                :title="t('dashboard.ordersTable.openMap', { address: group.address })"
+                :aria-label="t('dashboard.ordersTable.openMapAria', { name: group.name, address: group.address })"
               >
                 <i class="fas fa-location-dot" aria-hidden="true"></i>
               </a>
             </span>
           </div>
           <div class="store-group-meta">
-            <span class="store-group-count">{{ group.count }} 筆</span>
+            <span class="store-group-count">{{ t('dashboard.ordersTable.count', { count: group.count }) }}</span>
             <span class="store-group-total">{{ formatMoney(group.total) }}</span>
             <!-- 固定寬度＝與下方每一列的操作欄同寬，讓「$金額」跟「換店」都跟明細列同一條基線，不再隨是否登入而歪掉 -->
             <span class="store-group-actions">
               <template v-if="userUid">
                 <span class="store-group-divider" aria-hidden="true"></span>
-                <button type="button" class="replace-store-btn" @click="emit('replace-store', group.name)"><i class="fas fa-right-left" aria-hidden="true"></i> 換店</button>
+                <button type="button" class="replace-store-btn" @click="emit('replace-store', group.name)"><i class="fas fa-right-left" aria-hidden="true"></i> {{ t('dashboard.ordersTable.replaceStore') }}</button>
               </template>
             </span>
           </div>
@@ -230,40 +238,40 @@ function clearSearch() { searchQuery.value = '' }
                   {{ mi.name }}（{{ formatMoney(mi.price) }}）
                 </option>
               </select>
-              <input v-else-if="isAdmin" v-model="editForm.meal" class="edit-input" placeholder="品項" />
+              <input v-else-if="isAdmin" v-model="editForm.meal" class="edit-input" :placeholder="t('dashboard.ordersTable.itemPlaceholder')" />
               <span v-else class="edit-readonly">{{ editForm.meal }}</span>
-              <input v-model="editForm.note" class="edit-input" placeholder="備註" />
+              <input v-model="editForm.note" class="edit-input" :placeholder="t('dashboard.ordersTable.notePlaceholder')" />
             </div>
           </template>
 
           <template #edit-money>
-            <input v-if="isAdmin" v-model="editForm.price" type="number" class="edit-input price-edit" aria-label="金額" />
-            <span v-else>{{ formatMoney(editForm.price) }}</span>
+            <input v-if="isAdmin" v-model="editForm.price" type="number" min="0" :step="moneyInputStep()" class="edit-input price-edit" :aria-label="t('dashboard.ordersTable.amount')" />
+            <span v-else>{{ formatMoney(toMinorUnits(editForm.price)) }}</span>
           </template>
 
           <template #actions>
             <template v-if="editingId === order.id">
-              <button class="row-btn save" @click="saveEdit(order.id)" aria-label="儲存">✓</button>
-              <button class="row-btn cancel" @click="cancelEdit" aria-label="取消">✕</button>
+              <button class="row-btn save" @click="saveEdit(order.id)" :aria-label="t('dashboard.ordersTable.save')">✓</button>
+              <button class="row-btn cancel" @click="cancelEdit" :aria-label="t('dashboard.ordersTable.cancel')">✕</button>
             </template>
             <template v-else>
-              <button class="row-btn copy" @click="emit('copy-order', order)" title="我也要！">+1</button>
+              <button class="row-btn copy" @click="emit('copy-order', order)" :title="t('dashboard.ordersTable.copy')">+1</button>
               <button
                 v-if="isAdmin && !isCollectedCashOrder(order)"
                 class="row-btn free"
                 :class="{ active: order.isFree }"
                 @click="emit('toggle-free', order)"
-                :title="order.isFree ? '取消免費並恢復個人費用' : '標記免費，不計入個人費用'"
-              >免費</button>
-              <button v-if="canModify(order)" class="row-btn edit" @click="startEdit(order)" title="編輯">
-                <i class="fas fa-pen" aria-hidden="true"></i><span class="edit-label">編輯</span>
+                :title="order.isFree ? t('dashboard.ordersTable.freeOff') : t('dashboard.ordersTable.freeOn')"
+              >{{ t('dashboard.ordersTable.free') }}</button>
+              <button v-if="canModify(order)" class="row-btn edit" @click="startEdit(order)" :title="t('dashboard.ordersTable.edit')">
+                <i class="fas fa-pen" aria-hidden="true"></i><span class="edit-label">{{ t('dashboard.ordersTable.edit') }}</span>
               </button>
               <button
                 v-if="canDelete(order)"
                 class="del-btn"
                 @click="emit(deleteEvent(order), order)"
-                :title="`刪除 ${order.name || ''} 的 ${order.meal || '訂單'}`"
-                :aria-label="`刪除 ${order.name || ''} 的訂單`"
+                :title="t('dashboard.ordersTable.deleteTitle', { name: order.name || '', meal: order.meal || t('dashboard.anOrder') })"
+                :aria-label="t('dashboard.ordersTable.deleteAria', { name: order.name || '' })"
               >×</button>
             </template>
           </template>

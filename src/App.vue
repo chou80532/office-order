@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { createAuth } from './composables/useAuth'
 import { createFirestore } from './composables/useFirestore'
@@ -8,6 +8,9 @@ import { setRouterAuthState } from './router'
 import { getTaipeiNextMidnightMs } from './utils/format'
 import { useHomeActions } from './composables/useHomeActions'
 import { resetPendingCart } from './composables/usePendingCart'
+import { usePublicConfig } from './composables/usePublicConfig'
+import { applyBranding, brandName } from './utils/branding'
+import { t } from './i18n'
 import ToastContainer from './components/layout/ToastContainer.vue'
 import DialogHost from './components/ui/DialogHost.vue'
 import AppShell from './components/layout/AppShell.vue'
@@ -22,6 +25,12 @@ const { closePanel } = useHomeActions()
 
 setRouterAuthState(auth)
 auth.initAuth()
+
+// 品牌（名稱、主題色）：登入後跟著即時的系統設定，登入前用公開設定。
+const { publicConfig, loadPublicConfig } = usePublicConfig()
+const activeBranding = computed(() => (auth.isLoggedIn.value ? firestore.systemSettings.value.branding : publicConfig.value.branding))
+watch(activeBranding, applyBranding, { immediate: true, deep: true })
+loadPublicConfig()
 
 const FIRESTORE_REFRESH_COOLDOWN_MS = 30_000
 let lastFirestoreRefreshAt = 0
@@ -42,7 +51,7 @@ function refreshFirestoreListeners() {
 
 function scheduleDailyDateRefresh() {
   clearTimeout(dailyDateRefreshTimer)
-  // 台北午夜後 1 秒刷新「今日」相關監聽。
+  // 系統時區午夜後 1 秒刷新「今日」相關監聽。
   dailyDateRefreshTimer = setTimeout(() => {
     firestore.refreshDailyStoreDate()
     firestore.refreshTodayOrdersListener()
@@ -88,6 +97,9 @@ watch(() => auth.isLoggedIn.value, (loggedIn) => {
     firestore.stopListeners()
   }
 }, { immediate: true })
+
+// 管理員改了系統時區後，下一個午夜的時間點也跟著改變。
+watch(() => firestore.systemSettings.value.timeZone, scheduleDailyDateRefresh)
 
 onMounted(() => {
   scheduleDailyDateRefresh()
@@ -139,7 +151,7 @@ watch(() => auth.isInitialized.value, async (initialized) => {
       </Transition>
     </RouterView>
   </template>
-  <LoadingState v-else class="app-loading" title="Office Order" description="載入中…" />
+  <LoadingState v-else class="app-loading" :title="brandName(activeBranding)" :description="t('common.loading')" />
   <ToastContainer />
   <DialogHost />
 </template>

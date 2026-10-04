@@ -11,6 +11,7 @@ import { usePendingCart } from '../../composables/usePendingCart'
 import { useHomeActions } from '../../composables/useHomeActions'
 import AppDatePicker from '../ui/AppDatePicker.vue'
 import { useToolbarTeleport } from '../../composables/useToolbarTeleport'
+import { t } from '../../i18n'
 
 const props = defineProps({
   toolbarTarget: { type: String, default: '' },
@@ -61,7 +62,7 @@ onMounted(() => {
 async function fetchStatsBundle() {
   const range = getSelectedMonthRange()
   if (!range) {
-    loadError.value = '請選擇有效的月份'
+    loadError.value = t('stats.invalidMonth')
     return
   }
   activeRange.value = range
@@ -100,7 +101,7 @@ async function fetchStats(range = activeRange.value) {
     totalOrders.value = orders
   } catch (err) {
     console.error('[Stats] load failed', err)
-    if (requestId === statsRequestId) loadError.value = '統計載入失敗，請稍後重試'
+    if (requestId === statsRequestId) loadError.value = t('stats.loadFailed')
   } finally {
     if (requestId === statsRequestId) isLoading.value = false
   }
@@ -132,47 +133,47 @@ defineExpose({ rangeLabel })
       >
       <div class="toolbar" :class="{ 'teleported-toolbar': desktopToolbar }">
         <div class="toolbar-right">
-          <span class="ctrl-label"><i class="fas fa-calendar-days" aria-hidden="true"></i> 月份</span>
-          <AppDatePicker v-model="selectedMonth" mode="month" aria-label="統計月份" class="stats-month-picker" />
+          <span class="ctrl-label"><i class="fas fa-calendar-days" aria-hidden="true"></i> {{ t('stats.month') }}</span>
+          <AppDatePicker v-model="selectedMonth" mode="month" :aria-label="t('stats.monthAria')" class="stats-month-picker" />
           <span v-if="isLoading" class="inline-spin"></span>
         </div>
       </div>
       </Teleport>
 
-      <LoadingState v-if="isLoading" title="計算中…" description="正在彙整所選月份的訂餐份數與排行。" />
-      <StatusNotice v-else-if="loadError" :title="loadError" description="請稍後重試。" alert><button class="retry-btn" @click="fetchStatsBundle">重試</button></StatusNotice>
-      <StatusNotice v-else-if="!activeRange" title="選擇月份後自動計算" description="從上方選取想查看的月份。" />
+      <LoadingState v-if="isLoading" :title="t('stats.loadingTitle')" :description="t('stats.loadingText')" />
+      <StatusNotice v-else-if="loadError" :title="loadError" :description="t('stats.tryLater')" alert><button class="retry-btn" @click="fetchStatsBundle">{{ t('common.retry') }}</button></StatusNotice>
+      <StatusNotice v-else-if="!activeRange" :title="t('stats.pickMonthTitle')" :description="t('stats.pickMonthText')" />
       <template v-else>
-        <div class="content-wrap"><p class="public-intro">大家吃什麼？看看熱門選擇，今日開放的店家可直接前往點餐。</p>
+        <div class="content-wrap"><p class="public-intro">{{ t('stats.intro') }}</p>
           <div class="kpi-row summary-strip">
             <div class="kpi summary-cell">
               <span class="kpi-icon is-accent" aria-hidden="true"><i class="fas fa-receipt"></i></span>
               <div class="kpi-body">
-                <p class="kpi-label">訂餐份數</p>
-                <p class="kpi-num">{{ totalOrders }}<span class="kpi-unit">份</span></p>
+                <p class="kpi-label">{{ t('stats.portions') }}</p>
+                <p class="kpi-num">{{ totalOrders }}<span class="kpi-unit">{{ t('stats.portionsUnit', { count: totalOrders }) }}</span></p>
               </div>
             </div>
             <div class="kpi summary-cell">
               <span class="kpi-icon is-highlight" aria-hidden="true"><i class="fas fa-user-group"></i></span>
               <div class="kpi-body">
-                <p class="kpi-label">參與人數</p>
-                <p class="kpi-num">{{ activePeopleCount }}<span class="kpi-unit">人</span></p>
+                <p class="kpi-label">{{ t('stats.people') }}</p>
+                <p class="kpi-num">{{ activePeopleCount }}<span class="kpi-unit">{{ t('stats.peopleUnit', { count: activePeopleCount }) }}</span></p>
               </div>
             </div>
 
           </div>
 
-          <StatusNotice v-if="totalOrders === 0" title="此期間無訂單" description="換一個月份，或先到點餐頁下單。" />
+          <StatusNotice v-if="totalOrders === 0" :title="t('stats.noOrdersTitle')" :description="t('stats.noOrdersText')" />
           <template v-else>
             <div class="rank-grid">
               <div class="stat-card">
-                <h3 class="stat-card-title"><i class="fas fa-store" aria-hidden="true"></i> 熱門店家</h3>
+                <h3 class="stat-card-title"><i class="fas fa-store" aria-hidden="true"></i> {{ t('stats.topStores') }}</h3>
                 <div class="rank-list">
                   <div v-for="(store, i) in topStores" :key="store.name" class="rank-item">
                     <div class="rank-head">
                       <span class="rank-num" :class="{ dim: i >= 3 }">{{ i + 1 }}</span>
                       <span class="rank-name">{{ store.name }}</span>
-                      <span class="rank-count">{{ store.count }} 份</span>
+                      <span class="rank-count">{{ t('stats.count', { count: store.count }) }}</span>
                     </div>
                     <div class="meter"><div class="meter-fill" :style="{ width: pct(store.count, statsStoreMax) + '%', opacity: fillOpacity(i) }" /></div>
                   </div>
@@ -180,13 +181,13 @@ defineExpose({ rangeLabel })
               </div>
 
               <div class="stat-card">
-                <h3 class="stat-card-title"><i class="fas fa-bowl-food" aria-hidden="true"></i> 熱門餐點</h3>
+                <h3 class="stat-card-title"><i class="fas fa-bowl-food" aria-hidden="true"></i> {{ t('stats.topMeals') }}</h3>
                 <div class="rank-list">
                   <div v-for="(meal, i) in topMeals" :key="meal.name" class="rank-item">
                     <div class="rank-head">
                       <span class="rank-num" :class="{ dim: i >= 3 }">{{ i + 1 }}</span>
                       <span class="rank-name">{{ meal.name }}</span>
-                      <span class="rank-count">{{ meal.count }} 份</span><button v-if="canOrder(meal.storeName)" class="browse-store" @click="browseStore(meal.storeName)">看菜單</button>
+                      <span class="rank-count">{{ t('stats.count', { count: meal.count }) }}</span><button v-if="canOrder(meal.storeName)" class="browse-store" @click="browseStore(meal.storeName)">{{ t('stats.viewMenu') }}</button>
                     </div>
                     <div class="meter"><div class="meter-fill" :style="{ width: pct(meal.count, statsMealMax) + '%', opacity: fillOpacity(i) }" /></div>
                   </div>
@@ -195,7 +196,7 @@ defineExpose({ rangeLabel })
             </div>
 
             <div class="stat-card block-card">
-              <h3 class="stat-card-title"><i class="fas fa-chart-column" aria-hidden="true"></i> 每日點餐趨勢</h3>
+              <h3 class="stat-card-title"><i class="fas fa-chart-column" aria-hidden="true"></i> {{ t('stats.dailyTrend') }}</h3>
               <div class="trend-bars">
                 <div v-for="day in dailyTrend" :key="day.date" class="trend-day">
                   <div class="trend-bar-wrap">
@@ -208,7 +209,7 @@ defineExpose({ rangeLabel })
             </div>
           </template>
         </div>
-        <p class="modal-note">份數、人數與排行包含免費餐點。排行依訂購份數，店家開放次數不同會影響名次。</p>
+        <p class="modal-note">{{ t('stats.note') }}</p>
       </template>
     </section>
 

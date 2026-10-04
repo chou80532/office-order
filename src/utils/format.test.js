@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect } from 'vitest'
 import {
+  formatDateShort,
   formatTimeShort,
   formatTimeWithDate,
   getLocalDateKey,
@@ -12,6 +13,8 @@ import {
   getTaipeiNextMidnightMs,
   getTodayBounds,
   getThisWeekRange,
+  getAppTimeZone,
+  setAppTimeZone,
   truncate,
 } from './format'
 
@@ -143,5 +146,50 @@ describe('truncate', () => {
     expect(truncate('abcdef', 3)).toBe('abc...')
     expect(truncate('ab', 3)).toBe('ab')
     expect(truncate('', 3)).toBe('')
+  })
+})
+
+describe('可設定的系統時區', () => {
+  afterEach(() => setAppTimeZone('Asia/Taipei'))
+
+  it('無效時區退回台北，並回報是否真的改變', () => {
+    expect(setAppTimeZone('Asia/Taipei')).toBe(false)
+    expect(setAppTimeZone('america/new_york')).toBe(true)
+    expect(getAppTimeZone()).toBe('America/New_York')
+    expect(setAppTimeZone('Not/AZone')).toBe(true)
+    expect(getAppTimeZone()).toBe('Asia/Taipei')
+  })
+
+  it('日期 key 與日界改用新時區', () => {
+    setAppTimeZone('America/New_York')
+    // 2026-07-07 02:00 UTC = 紐約 07-06 22:00（夏令時間 UTC-4）
+    expect(getLocalDateKey(new Date(Date.UTC(2026, 6, 7, 2)))).toBe('2026-07-06')
+    expect(getTaipeiDayStartMs(new Date(Date.UTC(2026, 6, 7, 2)))).toBe(Date.UTC(2026, 6, 6, 4))
+  })
+
+  it('日光節約時間開始的那天只有 23 小時，區間仍從午夜到午夜', () => {
+    setAppTimeZone('America/New_York')
+    const bounds = getTaipeiDateRangeBounds('2026-03-08', '2026-03-08')
+    expect(bounds.startMs).toBe(Date.UTC(2026, 2, 8, 5))
+    expect(bounds.endMs).toBe(Date.UTC(2026, 2, 9, 4))
+    expect(bounds.endMs - bounds.startMs).toBe(23 * 60 * 60 * 1000)
+  })
+
+  it('月份範圍與 datetime-local 往返跨過日光節約時間仍正確', () => {
+    setAppTimeZone('Europe/London')
+    expect(getTaipeiMonthBounds('2026-10')).toEqual({
+      startMs: Date.UTC(2026, 8, 30, 23),
+      endMs: Date.UTC(2026, 10, 1, 0),
+    })
+    const value = '2026-10-25T09:15'
+    expect(getTaipeiDateTimeValue(new Date(getTaipeiDateTimeMs(value)))).toBe(value)
+    expect(getTaipeiDateTimeMs(value)).toBe(Date.UTC(2026, 9, 25, 9, 15))
+  })
+
+  it('半小時時差的時區與日期字串顯示都以系統時區為準', () => {
+    setAppTimeZone('Asia/Kolkata')
+    expect(getTaipeiDateRangeBounds('2026-07-01', '').startMs).toBe(Date.UTC(2026, 5, 30, 18, 30))
+    expect(formatDateShort('2026-07-01')).toBe('2026/07/01')
+    expect(formatTimeShort(Date.UTC(2026, 6, 6, 20, 30))).toBe('02:00')
   })
 })

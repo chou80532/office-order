@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onScopeDispose } from 'vue'
 import { formatMoney } from '../../utils/format'
+import { t } from '../../i18n'
 
 const props = defineProps({
   orders: { type: Array, default: () => [] },
@@ -9,7 +10,7 @@ const props = defineProps({
   totalMembers: { type: Number, default: 0 }
 })
 
-// 現金且尚未收款、非免費 → 待結；其餘（錢包、已收現金、免費）→ 已結。
+// 現金且尚未收款、非免費 → 待結；其餘（錢包、已收現金、免費、只統計不收錢）→ 已結。
 // 判斷方式比照 CashPaymentPanel 的待收邏輯，避免兩處語意分歧。
 const isCashOrder = (o) =>
   o.paymentMethod === 'cash' || (!o.paymentMethod && !o.paid && !o.walletDebited)
@@ -55,8 +56,6 @@ const ordersDisplay = useCountUp(computed(() => props.orders.length))
 const totalDisplay = useCountUp(total)
 const pendingDisplay = useCountUp(pendingTotal)
 const peopleDisplay = useCountUp(uniquePeople)
-const totalFormatted = computed(() => totalDisplay.value.toLocaleString())
-const pendingFormatted = computed(() => pendingDisplay.value.toLocaleString())
 </script>
 
 <template>
@@ -64,30 +63,30 @@ const pendingFormatted = computed(() => pendingDisplay.value.toLocaleString())
     <div class="kpi summary-cell">
       <span class="kpi-icon is-accent" aria-hidden="true"><i class="fas fa-receipt"></i></span>
       <div class="kpi-body">
-        <p class="kpi-label">今日訂單</p>
-        <p class="kpi-num mono">{{ ordersDisplay }} <span class="kpi-unit">筆</span></p>
+        <p class="kpi-label">{{ t('dashboard.kpi.orders') }}</p>
+        <p class="kpi-num mono">{{ ordersDisplay }} <span class="kpi-unit">{{ t('dashboard.kpi.ordersUnit', { count: ordersDisplay }) }}</span></p>
       </div>
     </div>
     <div class="kpi summary-cell">
       <span class="kpi-icon is-success" aria-hidden="true"><i class="fas fa-dollar-sign"></i></span>
       <div class="kpi-body">
-        <p class="kpi-label">總金額</p>
-        <p class="kpi-num mono">{{ formatMoney(totalFormatted) }}</p>
+        <p class="kpi-label">{{ t('dashboard.kpi.total') }}</p>
+        <p class="kpi-num mono">{{ formatMoney(totalDisplay) }}</p>
       </div>
     </div>
     <div class="kpi summary-cell">
       <span class="kpi-icon is-pending" aria-hidden="true"><i class="fas fa-hourglass-half"></i></span>
       <div class="kpi-body">
-        <p class="kpi-label">待結金額</p>
-        <p class="kpi-num kpi-num-highlight mono">{{ formatMoney(pendingFormatted) }}</p>
+        <p class="kpi-label">{{ t('dashboard.kpi.pending') }}</p>
+        <p class="kpi-num kpi-num-highlight mono">{{ formatMoney(pendingDisplay) }}</p>
       </div>
     </div>
     <div class="kpi summary-cell">
       <span class="kpi-icon is-people" aria-hidden="true"><i class="fas fa-user-group"></i></span>
       <div class="kpi-body">
-        <p class="kpi-label">今日用餐人數</p>
-        <p class="kpi-num mono">{{ peopleDisplay }} <span class="kpi-unit">人</span></p>
-        <p class="kpi-label">待重新點餐 {{ pendingPeople }} 人</p>
+        <p class="kpi-label">{{ t('dashboard.kpi.people') }}</p>
+        <p class="kpi-num mono">{{ peopleDisplay }} <span class="kpi-unit">{{ t('dashboard.kpi.peopleUnit', { count: peopleDisplay }) }}</span></p>
+        <p class="kpi-label">{{ t('dashboard.kpi.pendingPeople', { count: pendingPeople }) }}</p>
       </div>
     </div>
   </div>

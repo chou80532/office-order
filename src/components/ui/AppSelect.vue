@@ -1,9 +1,11 @@
 <script setup>
 import { computed, ref, useId, onMounted, onUnmounted, nextTick } from 'vue'
+import { t } from '../../i18n'
 const props = defineProps({
   modelValue: { type: String, default: '' },
   options: { type: Array, default: () => [] },
-  placeholder: { type: String, default: '請選擇' },
+  placeholder: { type: String, default: '' },
+  emptyText: { type: String, default: '' },
   label: { type: String, required: true },
   disabled: Boolean,
 })
@@ -44,14 +46,14 @@ onUnmounted(() => document.removeEventListener('pointerdown', outside))
 <template>
   <div ref="root" class="app-select" @keydown="keydown" @focusout="focusout">
     <button ref="trigger" type="button" class="select-trigger" :disabled="disabled" :aria-label="label" aria-haspopup="listbox" :aria-expanded="open" :aria-controls="id" @click="open ? close() : expand()" @keydown.down.prevent="expand" @keydown.up.prevent="expand">
-      <span :class="{ placeholder: !selected }">{{ selected?.label || placeholder }}</span>
+      <span :class="{ placeholder: !selected }">{{ selected?.label || placeholder || t('ui.selectPlaceholder') }}</span>
       <i class="fas fa-chevron-down" aria-hidden="true" />
     </button>
     <div v-if="open" :id="id" class="select-options" role="listbox" :aria-label="label">
       <button v-for="option in options" :key="option.value" type="button" role="option" :aria-selected="modelValue === option.value" @click="choose(option.value)">
         <span>{{ option.label }}</span><i v-if="modelValue === option.value" class="fas fa-check" aria-hidden="true" />
       </button>
-      <p v-if="!options.length" class="placeholder">目前沒有可選店家</p>
+      <p v-if="!options.length" class="placeholder">{{ emptyText || t('ui.selectEmpty') }}</p>
     </div>
   </div>
 </template>

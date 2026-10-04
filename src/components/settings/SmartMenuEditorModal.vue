@@ -6,11 +6,11 @@
         <div class="sme-title">
           <i class="fas fa-utensils"></i>
           <span>{{ store.name }}</span>
-          <span class="sme-sub">{{ unifiedEditor ? '編輯店家' : '智慧點餐編輯' }}</span>
-          <span v-if="savedCount > 0" class="sme-count">已儲存 {{ savedCount }} 項</span>
+          <span class="sme-sub">{{ unifiedEditor ? t('menuEditor.editStore') : t('menuEditor.editMenu') }}</span>
+          <span v-if="savedCount > 0" class="sme-count">{{ t('menuEditor.savedCount', { count: savedCount }) }}</span>
         </div>
         <slot name="header-actions" :save="save" :is-saving="isSaving" />
-        <button type="button" class="sme-close-btn" @click="attemptClose" title="關閉"><i class="fas fa-times"></i></button>
+        <button type="button" class="sme-close-btn" @click="attemptClose" :title="t('menuEditor.close')" :aria-label="t('menuEditor.close')"><i class="fas fa-times"></i></button>
       </div>
 
       <!-- Body -->
@@ -29,11 +29,11 @@
             <img v-if="currentImageUrl" :src="currentImageUrl" alt="" class="sme-image-toggle-thumb" decoding="async" @error="handleImageError">
             <i v-else class="fas fa-image sme-image-toggle-icon" aria-hidden="true"></i>
             <span class="sme-image-toggle-label">
-              菜單圖片
-              <small v-if="imagesWithUrl.length > 1">第 {{ currentImageIndex + 1 }}／{{ imagesWithUrl.length }} 張</small>
-              <small v-else-if="!imagesWithUrl.length">尚未上傳</small>
+              {{ t('menuEditor.menuImages') }}
+              <small v-if="imagesWithUrl.length > 1">{{ t('menuEditor.imagePosition', { current: currentImageIndex + 1, total: imagesWithUrl.length }) }}</small>
+              <small v-else-if="!imagesWithUrl.length">{{ t('menuEditor.notUploaded') }}</small>
             </span>
-            <span class="sme-image-toggle-action">{{ imageCollapsed ? '展開' : '收合' }}<i class="fas fa-chevron-down" aria-hidden="true"></i></span>
+            <span class="sme-image-toggle-action">{{ imageCollapsed ? t('menuEditor.expand') : t('menuEditor.collapse') }}<i class="fas fa-chevron-down" aria-hidden="true"></i></span>
           </button>
           <div id="sme-image-viewer" class="sme-image-viewer">
           <!-- 工具列定位在圖片區內，才不會蓋到下面的縮圖列 -->
@@ -63,11 +63,11 @@
               @load="handleMainImageLoad"
               @error="handleMainImageError"
             />
-            <LoadingState v-if="currentImageUrl && mainImageLoading" class="sme-image-loading" title="正在載入菜單…" compact />
+            <LoadingState v-if="currentImageUrl && mainImageLoading" class="sme-image-loading" :title="t('menuEditor.loadingMenu')" compact />
             <!-- 只有真的沒有圖片網址時才顯示空狀態；載入完成後不能落入這個分支 -->
             <div v-else-if="!currentImageUrl" class="sme-no-image">
               <i class="fas fa-image"></i>
-              <span>此店家沒有可用的菜單圖片</span>
+              <span>{{ t('menuEditor.noImage') }}</span>
             </div>
           </div>
 
@@ -79,11 +79,11 @@
           >
             <template v-if="currentImageUrl">
             <!-- 手機版用雙指縮放，縮放鈕只在桌機顯示；「還原」在手機版只有縮放過才出現 -->
-            <button type="button" class="glass-btn sme-zoom-step" @click="zoomOut" title="縮小"><i class="fas fa-search-minus"></i></button>
+            <button type="button" class="glass-btn sme-zoom-step" @click="zoomOut" :title="t('menuEditor.zoomOut')" :aria-label="t('menuEditor.zoomOut')"><i class="fas fa-search-minus"></i></button>
             <span class="sme-zoom-level sme-zoom-step">{{ Math.round(pinchScale * 100) }}%</span>
-            <button type="button" class="glass-btn sme-zoom-step" @click="zoomIn" title="放大"><i class="fas fa-search-plus"></i></button>
+            <button type="button" class="glass-btn sme-zoom-step" @click="zoomIn" :title="t('menuEditor.zoomIn')" :aria-label="t('menuEditor.zoomIn')"><i class="fas fa-search-plus"></i></button>
             <div class="sme-divider sme-zoom-step"></div>
-            <button type="button" class="glass-btn sme-zoom-reset" @click="resetZoom" title="還原"><i class="fas fa-expand"></i></button>
+            <button type="button" class="glass-btn sme-zoom-reset" @click="resetZoom" :title="t('menuEditor.resetZoom')" :aria-label="t('menuEditor.resetZoom')"><i class="fas fa-expand"></i></button>
             </template>
             <slot name="image-actions" :image="imagesWithUrl[currentImageIndex] || null" />
           </div>
@@ -91,7 +91,7 @@
 
           <!-- Image navigation (multi-image) -->
           <div v-if="imagesWithUrl.length > 1" class="sme-image-nav">
-            <button type="button" class="sme-nav-btn" @click="prevImage" title="上一張"><i class="fas fa-chevron-left"></i></button>
+            <button type="button" class="sme-nav-btn" @click="prevImage" :title="t('menuEditor.previousImage')" :aria-label="t('menuEditor.previousImage')"><i class="fas fa-chevron-left"></i></button>
             <div class="sme-thumbs">
               <div
                 v-for="(img, idx) in imagesWithUrl"
@@ -99,10 +99,10 @@
                 :class="['sme-thumb', { active: idx === currentImageIndex }]"
                 @click="selectImage(idx)"
               >
-                <img :src="img.url" :alt="`菜單 ${idx + 1}`" loading="lazy" decoding="async" @error="handleImageError">
+                <img :src="img.url" :alt="t('menuEditor.imageAlt', { index: idx + 1 })" loading="lazy" decoding="async" @error="handleImageError">
               </div>
             </div>
-            <button type="button" class="sme-nav-btn" @click="nextImage" title="下一張"><i class="fas fa-chevron-right"></i></button>
+            <button type="button" class="sme-nav-btn" @click="nextImage" :title="t('menuEditor.nextImage')" :aria-label="t('menuEditor.nextImage')"><i class="fas fa-chevron-right"></i></button>
           </div>
         </div>
 
@@ -110,73 +110,62 @@
 
         <!-- Right: Editor -->
         <div ref="editorPane" class="sme-editor-pane">
-          <p class="sme-hint">對照菜單圖片，編輯後按「{{ unifiedEditor ? '儲存資料' : '儲存品項' }}」套用。文字解析會取代目前編輯內容。</p>
+          <p class="sme-hint">{{ t('menuEditor.hint', { action: unifiedEditor ? t('menuEditor.saveData') : t('menuEditor.saveItems') }) }}</p>
           <!-- Text input -->
           <details class="sme-section sme-import" :open="!store.menuItems?.length">
-            <summary>貼上文字建立／取代菜單</summary>
+            <summary>{{ t('menuEditor.importSummary') }}</summary>
             <div class="sme-section-header">
-              <span class="sme-label"><i class="fas fa-keyboard"></i> 快速輸入</span>
-              <span class="sme-hint">每行一品項；可用「# 分類」建立分區，加點請在開頭加 + 號</span>
+              <span class="sme-label"><i class="fas fa-keyboard"></i> {{ t('menuEditor.quickInput') }}</span>
+              <span class="sme-hint">{{ t('menuEditor.quickInputHint') }}</span>
             </div>
             <details id="sme-input-help" class="sme-help" :open="!store.menuItems?.length">
-              <summary><i class="fas fa-circle-question" aria-hidden="true"></i> 怎麼寫？格式與範例</summary>
+              <summary><i class="fas fa-circle-question" aria-hidden="true"></i> {{ t('menuEditor.help.summary') }}</summary>
               <div class="sme-help-body">
                 <section class="sme-help-block">
-                  <h4>基本：一行一個品項</h4>
-                  <pre># 便當
-雞腿便當 110
-排骨便當 100
-
-# 加點
-+滷蛋 15
-水餃 5/顆</pre>
-                  <p><code>#</code> 開頭是分類。<code>+</code> 開頭是加點，會變成整間店共用的加料清單。<code>5/顆</code> 是按單位計價，點餐時再選數量。</p>
+                  <h4>{{ t('menuEditor.help.basicTitle') }}</h4>
+                  <pre>{{ t('menuEditor.help.basicExample') }}</pre>
+                  <p>{{ t('menuEditor.help.basicText') }}</p>
                 </section>
 
                 <section class="sme-help-block">
-                  <p>全店共用加點只寫一次：在「#加點」下各寫一行「+牧場洗選蛋 15」、「+起司 10」，點餐時會出現在每道主餐的加料區，不必逐道重複。</p>
-                  <h4>同一道菜要選的東西：帶 <code>*</code> <code>!</code> <code>+</code> 就是選項群組</h4>
-                  <pre>創意蛋包飯 100
-  大小* 小/大+20
-  口味* 原味/咖哩/墨西哥
-  肉類* 牛肉/羊肉/蝦仁
-  加點! 加蛋+15</pre>
-                  <p><code>*</code> 必選 <code>!</code> 可複選 <code>+20</code> 每份加價。<b>只要行內有這三個記號之一，就會掛到上一個品項底下</b>，縮排只是排版好看，貼上時被吃掉也沒關係。</p>
-                  <p>大小、口味、肉類、加購<b>全部用這一種寫法</b>，幾個面向就幾行。十種口味 × 五種肉類寫兩行就好，不用窮舉成五十筆。三個記號都沒有的群組（例如全免費的選填單選）就一定要縮排。</p>
-                  <p>只有一個單選群組有加價時，按鈕會直接顯示實際售價（<b>小 NT$ 100</b>、<b>大 NT$ 120</b>），不會讓人自己加。</p>
+                  <p>{{ t('menuEditor.help.sharedAddons') }}</p>
+                  <h4>{{ t('menuEditor.help.optionsTitle') }}</h4>
+                  <pre>{{ t('menuEditor.help.optionsExample') }}</pre>
+                  <p>{{ t('menuEditor.help.optionsText1') }}</p>
+                  <p>{{ t('menuEditor.help.optionsText2') }}</p>
+                  <p>{{ t('menuEditor.help.optionsText3', { small: formatMoney(toMinorUnits(10)), large: formatMoney(toMinorUnits(12)) }) }}</p>
                 </section>
 
                 <section class="sme-help-block">
-                  <h4>例外：價差湊不出固定加價時，才用規格</h4>
-                  <pre>牛肉湯麵(細麵)(大) 140
-牛肉湯麵(烏龍麵)(大) 145</pre>
-                  <p>像這種「大份加 20、但換烏龍麵之後只加 5」的，沒辦法用固定加價表示，只能同分類同餐名、把規格放在餐名最後的括號裡各寫各的價。括號裡只認<b>麵體、大小、冰熱</b>這類詞，口味、作法寫進去不會生效。舊菜單已經這樣寫的可以不用改。</p>
+                  <h4>{{ t('menuEditor.help.variantsTitle') }}</h4>
+                  <pre>{{ t('menuEditor.help.variantsExample') }}</pre>
+                  <p>{{ t('menuEditor.help.variantsText') }}</p>
                 </section>
 
                 <ul class="sme-help-notes">
-                  <li><b>少鹽、不加蔥</b>這類不影響價格的需求請在「快捷備註」設定，不用寫進菜單。</li>
-                  <li><b>解析預覽會取代整份編輯內容</b>。要保留現有品項，先按「編輯現有品項」載入後再新增。</li>
+                  <li>{{ t('menuEditor.help.note1') }}</li>
+                  <li>{{ t('menuEditor.help.note2') }}</li>
                 </ul>
               </div>
             </details>
             <textarea
-              aria-label="快速輸入菜單"
+              :aria-label="t('menuEditor.quickInputAria')"
               aria-describedby="sme-input-help"
               v-model="textInput"
               class="sme-textarea"
-              :placeholder="placeholderText"
+              :placeholder="t('menuEditor.placeholder')"
               rows="7"
               spellcheck="false"
             ></textarea>
             <div class="sme-text-actions">
               <button type="button" class="sme-btn sme-btn-secondary" @click="clearTextInput">
-                <i class="fas fa-eraser"></i> 清除
+                <i class="fas fa-eraser"></i> {{ t('menuEditor.clear') }}
               </button>
-              <button type="button" class="sme-btn sme-btn-secondary" :disabled="!parsedItems.length" title="把目前的編輯內容輸出成文字，可貼到別的店家" @click="copyAsText">
-                <i class="fas fa-copy"></i> 複製成文字
+              <button type="button" class="sme-btn sme-btn-secondary" :disabled="!parsedItems.length" :title="t('menuEditor.copyAsTextHint')" @click="copyAsText">
+                <i class="fas fa-copy"></i> {{ t('menuEditor.copyAsText') }}
               </button>
               <button type="button" class="sme-btn sme-btn-primary" @click="parseText">
-                <i class="fas fa-magic"></i> 解析預覽
+                <i class="fas fa-magic"></i> {{ t('menuEditor.parse') }}
               </button>
             </div>
           </details>
@@ -184,34 +173,34 @@
           <!-- Parsed preview table -->
           <div v-if="parsedItems.length > 0" class="sme-section">
             <div class="sme-section-header">
-              <span class="sme-label"><i class="fas fa-table"></i> 預覽確認（可直接修改）</span>
+              <span class="sme-label"><i class="fas fa-table"></i> {{ t('menuEditor.previewTitle') }}</span>
               <button type="button" class="sme-btn-add-row" @click="addRow">
-                <i class="fas fa-plus"></i> 新增一行
+                <i class="fas fa-plus"></i> {{ t('menuEditor.addRow') }}
               </button>
             </div>
             <div class="sme-save-bar">
               <div class="sme-save-summary">
-                共 <strong>{{ mainCount }}</strong> 主餐・<strong>{{ addonCount }}</strong> 加點<template v-if="optionItemCount">・<strong>{{ optionItemCount }}</strong> 筆有選項</template>
+                {{ t('menuEditor.summary', { main: mainCount, addon: addonCount }) }}<template v-if="optionItemCount">{{ t('menuEditor.summaryOptions', { count: optionItemCount }) }}</template>
               </div>
               <button v-if="!unifiedEditor" type="button" class="sme-btn sme-btn-primary sme-btn-save" @click="save" :disabled="isSaving || hasErrors || (hasWarnings && !warningsAccepted)">
                 <span v-if="isSaving" class="sme-spinner"></span>
                 <template v-else><i class="fas fa-save"></i></template>
-                儲存品項
+                {{ t('menuEditor.saveItems') }}
               </button>
             </div>
             <div v-if="issueCount" class="sme-validation" role="status">
-              {{ issueCount }} 個品項需要檢查，問題已標在各列下方。
-              <label v-if="hasWarnings && !hasErrors"><input type="checkbox" v-model="warningsAccepted">我已確認重複品項與零元價格</label>
+              {{ t('menuEditor.issues', { count: issueCount }) }}
+              <label v-if="hasWarnings && !hasErrors"><input type="checkbox" v-model="warningsAccepted">{{ t('menuEditor.acceptWarnings') }}</label>
             </div>
             <div class="sme-table-wrap">
               <table class="sme-table">
                 <thead>
                   <tr>
-                    <th class="sme-col-category">分類</th>
-                    <th class="sme-col-name">餐點名稱</th>
-                    <th class="sme-col-unit" title="留空＝一般品項">單位</th>
-                    <th class="sme-col-price">單價</th>
-                    <th class="sme-col-actions" title="刪除"></th>
+                    <th class="sme-col-category">{{ t('menuEditor.colCategory') }}</th>
+                    <th class="sme-col-name">{{ t('menuEditor.colName') }}</th>
+                    <th class="sme-col-unit" :title="t('menuEditor.colUnitHint')">{{ t('menuEditor.colUnit') }}</th>
+                    <th class="sme-col-price">{{ t('menuEditor.colPrice') }} ({{ getAppCurrency().symbol }})</th>
+                    <th class="sme-col-actions" :title="t('menuEditor.colDelete')"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -221,20 +210,20 @@
                       <input
                         type="text"
                         v-model="item.category"
-                        :aria-label="`分類 (${item.name || '品項'})`"
+                        :aria-label="t('menuEditor.categoryAria', { name: item.name || t('menuEditor.item') })"
                         class="sme-input sme-category-input"
-                        placeholder="其他"
+                        :placeholder="t('dish.category.other')"
                         maxlength="20"
                       >
                     </td>
-                    <td><input type="text" v-model="item.name" class="sme-input" :aria-label="`第 ${idx + 1} 項餐點名稱`" placeholder="餐點名稱" maxlength="50" :aria-invalid="issues[idx].errors.length > 0">
+                    <td><input type="text" v-model="item.name" class="sme-input" :aria-label="t('menuEditor.nameAria', { index: idx + 1 })" :placeholder="t('menuEditor.namePlaceholder')" maxlength="50" :aria-invalid="issues[idx].errors.length > 0">
                       <small v-for="message in [...issues[idx].errors, ...issues[idx].warnings]" :key="message" class="sme-field-issue">{{ message }}</small>
                     </td>
-                    <td><input type="text" v-model="item.unit" class="sme-input sme-unit-input" :aria-label="`計價單位 (${item.name || '品項'})，一般品項留空`" placeholder="留空" maxlength="4"></td>
+                    <td><input type="text" v-model="item.unit" class="sme-input sme-unit-input" :aria-label="t('menuEditor.unitAria', { name: item.name || t('menuEditor.item') })" :placeholder="t('menuEditor.unitPlaceholder')" maxlength="4"></td>
                     <td>
                       <div class="sme-price-cell">
                         <span v-if="isAddonMenuCategory(item.category)" class="sme-addon-plus">+</span>
-                        <input type="number" inputmode="numeric" v-model.number="item.price" class="sme-input sme-price-input" placeholder="0" min="0" max="9999" step="1" :aria-label="`單價 (${item.name || '品項'})`">
+                        <MoneyInput v-model="item.price" :currency="getAppCurrency().code" :show-symbol="false" input-class="sme-input sme-price-input" placeholder="0" :aria-label="t('menuEditor.priceAria', { name: item.name || t('menuEditor.item') })" />
                       </div>
                     </td>
                     <td class="sme-action-cell">
@@ -244,14 +233,14 @@
                           class="sme-btn-opt-row"
                           :class="{ on: optionGroupCount(item) > 0, open: expandedOptionsFor === item._editorId }"
                           :aria-expanded="expandedOptionsFor === item._editorId"
-                          :aria-label="optionGroupCount(item) ? `${item.name || '此品項'} 有 ${optionGroupCount(item)} 個選項群組，點擊展開` : `為 ${item.name || '此品項'} 加入選項群組`"
-                          :title="optionGroupCount(item) ? `${optionGroupCount(item)} 個選項群組` : '加入選項群組（口味、肉類…）'"
+                          :aria-label="optionGroupCount(item) ? t('menuEditor.optionsOpenAria', { name: item.name || t('menuEditor.thisItem'), count: optionGroupCount(item) }) : t('menuEditor.optionsAddAria', { name: item.name || t('menuEditor.thisItem') })"
+                          :title="optionGroupCount(item) ? t('menuEditor.optionsCount', { count: optionGroupCount(item) }) : t('menuEditor.optionsAddHint')"
                           @click="toggleOptionsEditor(item)"
                         >
                           <i class="fas fa-sliders" aria-hidden="true"></i>
                           <span v-if="optionGroupCount(item)" class="sme-opt-count" aria-hidden="true">{{ optionGroupCount(item) }}</span>
                         </button>
-                        <button type="button" class="sme-btn-del-row" @click="removeRow(idx)" :aria-label="`刪除 ${item.name || '此行'}`" title="刪除此行"><i class="fas fa-times"></i></button>
+                        <button type="button" class="sme-btn-del-row" @click="removeRow(idx)" :aria-label="t('menuEditor.deleteRowAria', { name: item.name || t('menuEditor.thisRow') })" :title="t('menuEditor.deleteRow')"><i class="fas fa-times"></i></button>
                       </div>
                     </td>
                   </tr>
@@ -260,10 +249,9 @@
                     <td colspan="5">
                       <div class="sme-options">
                         <p class="sme-options-hint">
-                          一個群組＝點餐時要選的一個面向。<b>必選</b>沒選不能送出，<b>可複選</b>可以選很多個；
-                          選項後面填加價，不加價就留 0。
+                          {{ t('menuEditor.optionsHint') }}
                           <span v-if="optionCombinations(item) > 1" class="sme-options-saved">
-                            這一筆取代掉 {{ optionCombinations(item) }} 筆窮舉出來的品項
+                            {{ t('menuEditor.optionsSaved', { count: optionCombinations(item) }) }}
                           </span>
                         </p>
 
@@ -274,12 +262,12 @@
                               v-model="group.label"
                               class="sme-input sme-opt-label"
                               :maxlength="MAX_OPTION_LABEL_LENGTH"
-                              placeholder="群組名稱，例如 口味"
-                              :aria-label="`第 ${gIdx + 1} 個選項群組名稱`"
+                              :placeholder="t('menuEditor.groupPlaceholder')"
+                              :aria-label="t('menuEditor.groupAria', { index: gIdx + 1 })"
                             >
-                            <label class="sme-opt-flag"><input type="checkbox" v-model="group.required"> 必選</label>
-                            <label class="sme-opt-flag"><input type="checkbox" v-model="group.multiple"> 可複選</label>
-                            <button type="button" class="sme-btn-del-row" :title="`刪除群組 ${group.label || ''}`" @click="removeOptionGroup(item, gIdx)"><i class="fas fa-times"></i></button>
+                            <label class="sme-opt-flag"><input type="checkbox" v-model="group.required"> {{ t('menuEditor.required') }}</label>
+                            <label class="sme-opt-flag"><input type="checkbox" v-model="group.multiple"> {{ t('menuEditor.multiple') }}</label>
+                            <button type="button" class="sme-btn-del-row" :title="t('menuEditor.deleteGroup', { label: group.label || '' })" :aria-label="t('menuEditor.deleteGroup', { label: group.label || '' })" @click="removeOptionGroup(item, gIdx)"><i class="fas fa-times"></i></button>
                           </div>
 
                           <div class="sme-opt-choices">
@@ -289,43 +277,40 @@
                                 v-model="choice.name"
                                 class="sme-input"
                                 :maxlength="MAX_OPTION_NAME_LENGTH"
-                                placeholder="選項名稱"
-                                :aria-label="`${group.label || '群組'} 的第 ${cIdx + 1} 個選項`"
+                                :placeholder="t('menuEditor.choicePlaceholder')"
+                                :aria-label="t('menuEditor.choiceAria', { group: group.label || t('menuEditor.group'), index: cIdx + 1 })"
                               >
                               <span class="sme-opt-plus" aria-hidden="true">+</span>
-                              <input
-                                type="number"
-                                inputmode="numeric"
-                                v-model.number="choice.price"
-                                class="sme-input sme-opt-price"
-                                min="0"
-                                max="9999"
-                                step="1"
+                              <MoneyInput
+                                v-model="choice.price"
+                                :currency="getAppCurrency().code"
+                                :show-symbol="false"
+                                input-class="sme-input sme-opt-price"
                                 placeholder="0"
-                                :aria-label="`${choice.name || '選項'} 的加價`"
-                              >
-                              <button type="button" class="sme-btn-del-row" title="刪除此選項" @click="removeOptionChoice(group, cIdx)"><i class="fas fa-times"></i></button>
+                                :aria-label="t('menuEditor.choicePriceAria', { choice: choice.name || t('menuEditor.choice') })"
+                              />
+                              <button type="button" class="sme-btn-del-row" :title="t('menuEditor.deleteChoice')" :aria-label="t('menuEditor.deleteChoice')" @click="removeOptionChoice(group, cIdx)"><i class="fas fa-times"></i></button>
                             </div>
                           </div>
 
                           <div class="sme-opt-actions">
-                            <button type="button" class="sme-btn sme-btn-secondary" @click="addOptionChoice(group)"><i class="fas fa-plus"></i> 選項</button>
-                            <button type="button" class="sme-btn sme-btn-secondary" :aria-expanded="optionPasteDrafts.has(group)" @click="openOptionPaste(group)"><i class="fas fa-paste"></i> 批次貼上</button>
+                            <button type="button" class="sme-btn sme-btn-secondary" @click="addOptionChoice(group)"><i class="fas fa-plus"></i> {{ t('menuEditor.addChoice') }}</button>
+                            <button type="button" class="sme-btn sme-btn-secondary" :aria-expanded="optionPasteDrafts.has(group)" @click="openOptionPaste(group)"><i class="fas fa-paste"></i> {{ t('menuEditor.pasteChoices') }}</button>
                           </div>
                           <div v-if="optionPasteDrafts.has(group)" class="sme-opt-paste">
                             <label>
-                              <span>批次貼上選項：用 /、頓號或換行分隔，加價寫 +20。</span>
-                              <textarea v-model="optionPasteDrafts.get(group).text" class="sme-input" rows="3" placeholder="原味/咖哩/墨西哥" :aria-label="`${group.label || '此群組'} 的批次選項`" @keydown.esc.stop="optionPasteDrafts.delete(group)"></textarea>
+                              <span>{{ t('menuEditor.pasteHint') }}</span>
+                              <textarea v-model="optionPasteDrafts.get(group).text" class="sme-input" rows="3" :placeholder="t('menuEditor.pastePlaceholder')" :aria-label="t('menuEditor.pasteAria', { group: group.label || t('menuEditor.thisGroup') })" @keydown.esc.stop="optionPasteDrafts.delete(group)"></textarea>
                             </label>
                             <div class="sme-opt-actions">
-                              <button type="button" class="sme-btn sme-btn-secondary" @click="optionPasteDrafts.delete(group)">取消</button>
-                              <button type="button" class="sme-btn sme-btn-primary" :disabled="!optionPasteDrafts.get(group).text.trim()" @click="pasteOptionChoices(group)">加入選項</button>
+                              <button type="button" class="sme-btn sme-btn-secondary" @click="optionPasteDrafts.delete(group)">{{ t('common.cancel') }}</button>
+                              <button type="button" class="sme-btn sme-btn-primary" :disabled="!optionPasteDrafts.get(group).text.trim()" @click="pasteOptionChoices(group)">{{ t('menuEditor.addChoices') }}</button>
                             </div>
                           </div>
                         </div>
 
                         <button type="button" class="sme-btn sme-btn-add-row" @click="addOptionGroup(item)">
-                          <i class="fas fa-plus"></i> 新增選項群組
+                          <i class="fas fa-plus"></i> {{ t('menuEditor.addGroup') }}
                         </button>
                       </div>
                     </td>
@@ -340,14 +325,14 @@
           <!-- Existing items chips -->
           <div v-else-if="store.menuItems && store.menuItems.length > 0" class="sme-section">
             <div class="sme-section-header">
-              <span class="sme-label"><i class="fas fa-check-circle" style="color:var(--mint)"></i> 已設定品項</span>
+              <span class="sme-label"><i class="fas fa-check-circle" style="color:var(--mint)"></i> {{ t('menuEditor.existingTitle') }}</span>
               <button type="button" class="sme-btn sme-btn-secondary sme-btn-edit-items" @click="loadExistingToEditor">
-                <i class="fas fa-edit"></i> 編輯現有品項
+                <i class="fas fa-edit"></i> {{ t('menuEditor.editExisting') }}
               </button>
             </div>
-            <input v-model="itemSearch" class="sme-input sme-search" type="search" placeholder="搜尋餐點或分類" aria-label="搜尋餐點或分類">
+            <input v-model="itemSearch" class="sme-input sme-search" type="search" :placeholder="t('menuEditor.searchPlaceholder')" :aria-label="t('menuEditor.searchPlaceholder')">
             <div v-for="group in existingGroups" :key="group.category" class="sme-item-group">
-              <h3 class="sme-group-title">{{ group.category }} <span>{{ group.items.length }} 項</span></h3>
+              <h3 class="sme-group-title">{{ menuCategoryLabel(group.category) }} <span>{{ t('menuEditor.itemCount', { count: group.items.length }) }}</span></h3>
               <div class="sme-chips">
               <span
                 v-for="item in group.items"
@@ -359,13 +344,13 @@
               </span>
               </div>
             </div>
-            <p v-if="!existingGroups.length" class="sme-hint">找不到符合的品項，請換個關鍵字。</p>
+            <p v-if="!existingGroups.length" class="sme-hint">{{ t('menuEditor.noSearchResults') }}</p>
           </div>
 
           <!-- Empty state -->
           <div v-else class="sme-empty-hint">
             <i class="fas fa-info-circle"></i>
-            <span>在上方輸入框貼上菜單文字後點「解析預覽」，確認後儲存即可啟用智慧點餐。</span>
+            <span>{{ t('menuEditor.emptyHint') }}</span>
           </div>
         </div>
       </div>
@@ -375,7 +360,10 @@
 
 <script setup>
 import LoadingState from '../ui/LoadingState.vue'
-import { formatMoney } from '../../utils/format'
+import { formatMoney, fromMinorUnits, getAppCurrency, toMinorUnits } from '../../utils/format'
+import { t, translateError } from '../../i18n'
+import MoneyInput from './system/MoneyInput.vue'
+import { useFirestore } from '../../composables/useFirestore'
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { menuIssues } from '../../utils/menuEditor'
 import { doc, updateDoc } from 'firebase/firestore'
@@ -383,7 +371,7 @@ import { db } from '../../firestore'
 import { useToast } from '../../composables/useToast'
 import { useSmartMenuDraft } from '../../composables/useSmartMenuDraft'
 import { useScrollLock } from '../../composables/useScrollLock'
-import { ADDON_MENU_CATEGORY, UNCATEGORIZED_MENU_CATEGORY, isAddonMenuCategory, isAddonMenuItem, normalizeMenuCategory } from '../../utils/menuCategories'
+import { ADDON_MENU_CATEGORY, UNCATEGORIZED_MENU_CATEGORY, isAddonMenuCategory, isAddonMenuItem, menuCategoryLabel, normalizeMenuCategory } from '../../utils/menuCategories'
 import {
   MAX_OPTION_GROUPS, MAX_OPTION_CHOICES, MAX_OPTION_LABEL_LENGTH, MAX_OPTION_NAME_LENGTH,
   parseOptionGroupLine, looksLikeOptionGroupLine, serializeOptionGroups, stringifyOptionGroups,
@@ -400,20 +388,12 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 const { showToast } = useToast()
 const { getDraft, updateDraft, clearDraft } = useSmartMenuDraft()
-
-const placeholderText = `# 便當
-雞腿便當 110
-排骨便當 100
-
-# 主餐
-創意蛋包飯 100
-  大小* 小/大+20
-  口味* 原味/咖哩/墨西哥
-  肉類* 牛肉/羊肉/蝦仁
-
-# 加點
-+滷蛋 15
-`
+const { systemSettings } = useFirestore()
+// 價格一律以幣別最小單位存（新台幣為元、美元為分）；文字格式與輸入框用主單位。
+const maxItemPrice = computed(() => systemSettings?.value?.limits?.maxItemPrice || 10_000)
+const plainAmount = value => String(fromMinorUnits(value))
+// 匯出成文字時，內部的「其他／加點」寫成目前語言的名稱，貼回來一樣認得。
+const categoryText = category => (isAddonMenuCategory(category) || category === UNCATEGORIZED_MENU_CATEGORY ? menuCategoryLabel(category) : category)
 
 const itemSearch = ref('')
 const existingGroups = computed(() => {
@@ -433,7 +413,7 @@ const editorPane = ref(null)
 const parsedItems = ref([])
 const isSaving = ref(false)
 const warningsAccepted = ref(false)
-const issues = computed(() => menuIssues(parsedItems.value))
+const issues = computed(() => menuIssues(parsedItems.value, { maxPrice: maxItemPrice.value }))
 const issueCount = computed(() => issues.value.filter(issue => issue.errors.length || issue.warnings.length).length)
 const hasErrors = computed(() => issues.value.some(issue => issue.errors.length))
 const hasWarnings = computed(() => issues.value.some(issue => issue.warnings.length))
@@ -462,7 +442,7 @@ const ensureOptions = (item) => {
 }
 const addOptionGroup = (item) => {
   const groups = ensureOptions(item)
-  if (groups.length >= MAX_OPTION_GROUPS) { showToast(`一筆品項最多 ${MAX_OPTION_GROUPS} 個選項群組`, 'error'); return }
+  if (groups.length >= MAX_OPTION_GROUPS) { showToast(t('menuEditor.tooManyGroups', { max: MAX_OPTION_GROUPS }), 'error'); return }
   groups.push({ label: '', required: true, multiple: false, choices: [{ name: '', price: 0 }] })
   expandedOptionsFor.value = item._editorId
 }
@@ -472,7 +452,7 @@ const removeOptionGroup = (item, index) => {
 }
 const addOptionChoice = (group) => {
   if (!Array.isArray(group.choices)) group.choices = []
-  if (group.choices.length >= MAX_OPTION_CHOICES) { showToast(`一個群組最多 ${MAX_OPTION_CHOICES} 個選項`, 'error'); return }
+  if (group.choices.length >= MAX_OPTION_CHOICES) { showToast(t('menuEditor.tooManyChoices', { max: MAX_OPTION_CHOICES }), 'error'); return }
   group.choices.push({ name: '', price: 0 })
 }
 const removeOptionChoice = (group, index) => { group.choices.splice(index, 1) }
@@ -484,8 +464,8 @@ const openOptionPaste = (group) => {
 const pasteOptionChoices = (group) => {
   const text = optionPasteDrafts.value.get(group)?.text.trim().replace(/\r?\n/g, '/')
   if (!text) return
-  const parsed = parseOptionGroupLine(`${group.label || '選項'} ${text}`)
-  if (!parsed?.choices?.length) { showToast('沒有解析到選項', 'error'); return }
+  const parsed = parseOptionGroupLine(`${group.label || t('menuEditor.choice')} ${text}`)
+  if (!parsed?.choices?.length) { showToast(t('menuEditor.noChoicesParsed'), 'error'); return }
   const existing = new Set((group.choices || []).map(choice => String(choice?.name || '').trim()).filter(Boolean))
   group.choices = [
     ...(group.choices || []).filter(choice => String(choice?.name || '').trim()),
@@ -499,9 +479,9 @@ const createEditorItem = (item) => {
   const itemType = typeFromCategory(itemCategory)
   return {
     _editorId: nextEditorItemId++,
-    price: 0,
     unit: '',
     ...item,
+    price: Math.round(Number(item?.price) || 0),
     type: itemType,
     category: itemCategory
   }
@@ -513,19 +493,19 @@ const copyAsText = async () => {
   let lastCategory = ''
   for (const item of parsedItems.value) {
     const category = normalizeMenuCategory(item.category, UNCATEGORIZED_MENU_CATEGORY)
-    if (category !== lastCategory) { if (lines.length) lines.push(''); lines.push(`# ${category}`); lastCategory = category }
+    if (category !== lastCategory) { if (lines.length) lines.push(''); lines.push(`# ${categoryText(category)}`); lastCategory = category }
     const unit = String(item.unit || '').trim()
     const prefix = isAddonMenuCategory(category) ? '+' : ''
-    lines.push(`${prefix}${String(item.name || '').trim()} ${item.price}${unit ? `/${unit}` : ''}`.trim())
+    lines.push(`${prefix}${String(item.name || '').trim()} ${plainAmount(item.price)}${unit ? `/${unit}` : ''}`.trim())
     lines.push(...stringifyOptionGroups(item.options))
   }
   const text = lines.join('\n')
   try {
     await navigator.clipboard.writeText(text)
-    showToast('已複製成文字，可以貼到別的店家或存起來')
+    showToast(t('menuEditor.copied'))
   } catch {
     textInput.value = text
-    showToast('無法存取剪貼簿，已改填回上方輸入框')
+    showToast(t('menuEditor.copyFallback'))
   }
 }
 
@@ -596,7 +576,7 @@ const onMouseDown = (e) => { if (pinchScale.value <= 1) return; isDragging.value
 const onMouseMove = (e) => { if (!isMouseDragging) return; translateX.value += e.clientX - lastMousePos.x; translateY.value += e.clientY - lastMousePos.y; lastMousePos = { x: e.clientX, y: e.clientY } }
 const onMouseUp = () => { isMouseDragging = false; setTimeout(() => { isDragging.value = false }, 0) }
 
-const handleImageError = (e) => { e.target.onerror = null; e.target.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><rect width='200' height='200' fill='%231A1D25'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='14' fill='%237B8099'>圖片失效</text></svg>" }
+const handleImageError = (e) => { e.target.onerror = null; e.target.src = `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><rect width='200' height='200' fill='%231A1D25'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='14' fill='%237B8099'>${encodeURIComponent(t('menuEditor.imageBroken'))}</text></svg>` }
 const handleMainImageError = (e) => {
   mainImageLoading.value = false
   handleImageError(e)
@@ -696,7 +676,8 @@ const parseText = () => {
       if (name) result.push(createEditorItem({ category: itemCategory, name, price: 0, unit: '' }))
       continue
     }
-    const price = Math.min(parseFloat(priceMatch[1]), 9999)
+    // 文字裡的價格是主單位（美元 12.5、新台幣 110），存成最小單位；超過上限的交給檢查標出來。
+    const price = toMinorUnits(parseFloat(priceMatch[1]))
     let rest = cleanLine.slice(0, cleanLine.lastIndexOf(priceMatch[0])).trim(), unit = ''
     if (priceUnitMatch) {
       unit = priceUnitMatch[2].slice(0, 4)
@@ -710,7 +691,7 @@ const parseText = () => {
     if (unit) { item.unit = unit; item.defaultQty = 1 }
     result.push(item)
   }
-  if (result.length === 0) { showToast('沒有解析到任何品項，請確認格式', 'error'); return }
+  if (result.length === 0) { showToast(t('menuEditor.nothingParsed'), 'error'); return }
   parsedItems.value = result
   lastParsedText.value = textInput.value
 }
@@ -736,9 +717,9 @@ const loadExistingToEditor = () => {
   const lines = []
   for (const item of props.store.menuItems) {
     const category = normalizeMenuCategory(item.category, defaultCategoryForType(item.type))
-    if (category !== lastCategory) { lines.push(`# ${category}`); lastCategory = category }
+    if (category !== lastCategory) { lines.push(`# ${categoryText(category)}`); lastCategory = category }
     const prefix = typeFromCategory(category) === 'addon' ? '+' : ''
-    const pricePart = item.unit ? `${item.price}/${item.unit}` : `${item.price}`
+    const pricePart = item.unit ? `${plainAmount(item.price)}/${item.unit}` : plainAmount(item.price)
     lines.push(`${prefix}${item.name} ${pricePart}`)
     lines.push(...stringifyOptionGroups(item.options))
   }
@@ -759,9 +740,9 @@ const save = async () => {
     try { await props.saveAll(null) } finally { isSaving.value = false }
     return
   }
-  if (hasErrors.value) return showToast('請先修正標示的名稱與價格', 'error')
-  if (hasWarnings.value && !warningsAccepted.value) return showToast('請先確認重複品項與零元價格', 'error')
-  if (parsedItems.value.length === 0) { showToast('沒有品項可儲存', 'error'); return }
+  if (hasErrors.value) return showToast(t('menuEditor.fixErrors'), 'error')
+  if (hasWarnings.value && !warningsAccepted.value) return showToast(t('menuEditor.confirmWarnings'), 'error')
+  if (parsedItems.value.length === 0) { showToast(t('menuEditor.nothingToSave'), 'error'); return }
   const cleaned = parsedItems.value.filter(item => item.name && String(item.name).trim()).map(item => {
     const category = normalizeMenuCategory(item.category, defaultCategoryForType(item.type))
     const itemType = typeFromCategory(category)
@@ -769,7 +750,7 @@ const save = async () => {
       type: itemType,
       category,
       name: String(item.name).trim().slice(0, 50),
-      price: Math.max(0, Math.min(9999, Math.round(Number(item.price) || 0)))
+      price: Math.max(0, Math.min(maxItemPrice.value, Math.round(Number(item.price) || 0)))
     }
     const unit = String(item.unit || '').trim().slice(0, 4)
     if (unit) { clean.unit = unit; clean.defaultQty = 1 }
@@ -777,7 +758,7 @@ const save = async () => {
     if (options.length) clean.options = options
     return clean
   })
-  if (cleaned.length === 0) { showToast('品項名稱不能全部為空', 'error'); return }
+  if (cleaned.length === 0) { showToast(t('menuEditor.allNamesEmpty'), 'error'); return }
   isSaving.value = true
   try {
     const targetDocId = props.store.menuDocId || props.store.docIds[0]
@@ -785,10 +766,10 @@ const save = async () => {
       if (!await props.saveAll(cleaned)) return
     } else {
       await updateDoc(doc(db, 'menu_images', targetDocId), { menuItems: cleaned, menuUpdatedAt: Date.now() })
-      showToast(`已儲存 ${props.store.name} 的 ${cleaned.length} 個品項！`)
+      showToast(t('menuEditor.saved', { store: props.store.name, count: cleaned.length }))
     }
     parsedItems.value = []; textInput.value = ''; savedCount.value = cleaned.length; clearCurrentDraft()
-  } catch (err) { showToast('儲存失敗: ' + err.message, 'error') } finally { isSaving.value = false }
+  } catch (err) { showToast(t('menuEditor.saveFailed', { message: translateError(err) }), 'error') } finally { isSaving.value = false }
 }
 
 const finishClose = async () => {
@@ -799,9 +780,9 @@ const finishClose = async () => {
 const attemptClose = () => {
   if (isSaving.value) return
   if (isDirty.value) {
-    showToast('有未儲存的內容', 'error', {
+    showToast(t('menuEditor.unsaved'), 'error', {
       duration: 6000,
-      undoLabel: '強制關閉',
+      undoLabel: t('menuEditor.forceClose'),
       undoFn: async () => { if (props.beforeClose && !await props.beforeClose()) return; clearCurrentDraft(); emit('close') }
     })
     return

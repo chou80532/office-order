@@ -10,7 +10,8 @@ export const callFunction = async (name, data = {}) => {
     const result = await httpsCallable(functions, name)(data)
     return result.data
   } catch (error) {
-    const wrapped = new Error(error?.message || '伺服器操作失敗')
+    // 後端錯誤代碼原樣保留，畫面再用 translateError 轉成目前語言。
+    const wrapped = new Error(error?.message || 'SERVER_ERROR')
     wrapped.code = error?.code || ''
     wrapped.details = error?.details
     throw wrapped

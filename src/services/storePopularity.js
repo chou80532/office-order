@@ -12,7 +12,7 @@ export function getCachedStorePopularity(uid, now = Date.now()) {
 
 // 首頁預載與面板共用同一請求；僅在記憶體保留分類所需欄位。
 export function loadStorePopularity(uid) {
-  if (!uid) return Promise.reject(new Error('尚未登入'))
+  if (!uid) return Promise.reject(new Error('UNAUTHENTICATED'))
   const cached = getCachedStorePopularity(uid)
   if (cached) return Promise.resolve(cached)
   if (cache?.uid !== uid) cache = { uid, data: null, pending: null }
