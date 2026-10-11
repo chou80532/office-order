@@ -14,6 +14,7 @@ const emit = defineEmits(['update:modelValue'])
 const id = useId()
 const update = patch => emit('update:modelValue', { ...props.modelValue, ...patch })
 const setCutoff = value => update({ ordering: { ...props.modelValue.ordering, defaultCutoff: value } })
+const setDietary = patch => update({ dietary: { ...props.modelValue.dietary, ...patch } })
 </script>
 
 <template>
@@ -36,6 +37,18 @@ const setCutoff = value => update({ ordering: { ...props.modelValue.ordering, de
       </div>
       <p class="sys-hint">{{ t('system.cutoff.hint') }}</p>
     </div>
+    <template v-if="!compact">
+      <label class="sys-choice">
+        <input type="checkbox" :checked="modelValue.dietary.enabled" :disabled="disabled" @change="setDietary({ enabled: $event.target.checked })">
+        <span><strong>{{ t('dietary.enabled') }}</strong><small>{{ t('dietary.enabledHint') }}</small></span>
+      </label>
+      <div v-if="modelValue.dietary.enabled" class="sys-field">
+        <label class="sys-label" :for="`${id}-tags`">{{ t('dietary.catalog') }}</label>
+        <textarea :id="`${id}-tags`" class="sys-input" rows="6" :value="modelValue.dietary.tags.join('\n')" :disabled="disabled" @change="setDietary({ tags: [...new Set($event.target.value.split('\n').map(tag => tag.trim()).filter(Boolean))] })"></textarea>
+        <p class="sys-hint">{{ t('dietary.catalogHint') }}</p>
+        <button v-if="!modelValue.dietary.tags.length" type="button" class="sys-secondary-btn" :disabled="disabled" @click="setDietary({ tags: t('dietary.suggestedTags').split(/[,、]/) })">{{ t('dietary.suggestions') }}</button>
+      </div>
+    </template>
   </div>
 </template>
 

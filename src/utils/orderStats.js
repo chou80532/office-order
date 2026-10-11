@@ -2,10 +2,10 @@ import { getLocalDateKey } from './format'
 import { t } from '../i18n'
 
 export function aggregateOrderStats(records) {
-    const peopleMap = {}
-    const storeMap = {}
-    const mealMap = {}
-    const dayMap = {}
+    const peopleMap = Object.create(null)
+    const storeMap = Object.create(null)
+    const mealMap = Object.create(null)
+    const dayMap = Object.create(null)
     let total = 0
     let orders = 0
     records.forEach(data => {

@@ -258,3 +258,81 @@ test('Cutoff, proxy consent and public config callables work against the emulato
   assert.equal(cancelled.body?.error, undefined, JSON.stringify(cancelled.body))
   await t.test('requires consent before members order for each other in consent mode', () => {})
 })
+
+test('Dietary labels and member preferences persist through real callable transactions', async (t) => {
+  const memberToken = await signIn(member.email, member.password)
+  const adminToken = await signIn(administrator.email, administrator.password)
+  const systemRef = db.collection('settings').doc('system')
+  const original = await systemRef.get()
+  t.after(async () => {
+    if (original.exists) await systemRef.set(original.data())
+    else await systemRef.delete()
+    await db.collection('users').doc(member.uid).update({ dietary: admin.firestore.FieldValue.delete() })
+  })
+  const config = { settings: { dietary: { enabled: true, tags: ['Vegan', 'Milk'] } } }
+  const forbidden = await callFunction('updateSystemSettings', config, memberToken)
+  assert.equal(forbidden.body?.error?.status, 'PERMISSION_DENIED')
+  const configured = await callFunction('updateSystemSettings', config, adminToken)
+  assert.equal(configured.body?.error, undefined, JSON.stringify(configured.body))
+  const chosen = { preferredTags: ['Vegan'], avoidedTags: ['Milk'] }
+  const saved = await callFunction('updateMyPreferences', { dietary: chosen }, memberToken)
+  assert.equal(saved.body?.error, undefined, JSON.stringify(saved.body))
+  assert.deepEqual((await db.collection('users').doc(member.uid).get()).data().dietary, chosen)
+  assert.equal((await db.collection('member_roster').doc(member.uid).get()).data()?.dietary, undefined)
+  const consent = await callFunction('updateMyPreferences', { allowProxyOrders: true }, memberToken)
+  assert.equal(consent.body?.error, undefined, JSON.stringify(consent.body))
+  assert.deepEqual((await db.collection('users').doc(member.uid).get()).data().dietary, chosen)
+  const invalid = await callFunction('updateMyPreferences', { dietary: { preferredTags: ['Unknown'], avoidedTags: [] } }, memberToken)
+  assert.equal(invalid.body?.error?.message, 'INVALID_PREFERENCES')
+  assert.deepEqual((await db.collection('users').doc(member.uid).get()).data().dietary, chosen)
+})
+
+test('Store names matching Object properties survive order and replacement transactions', async (t) => {
+  const memberToken = await signIn(member.email, member.password)
+  const adminToken = await signIn(administrator.email, administrator.password)
+  const dailyRef = db.collection('settings').doc('daily')
+  const originalDaily = (await dailyRef.get()).data()
+  const diningRef = db.collection('dining_days').doc(originalDaily.serviceDate)
+  const originalDining = (await diningRef.get()).data()
+  const walletRef = db.collection('wallets').doc(member.uid)
+  await walletRef.set({ ownerUid: member.uid, ownerName: member.memberName, balance: 500 })
+  t.after(async () => {
+    await dailyRef.set(originalDaily)
+    if (originalDining) await diningRef.set(originalDining)
+    else await diningRef.delete()
+    await walletRef.delete()
+  })
+
+  // Firestore permits these field names; names matching __.*__ are reserved.
+  for (const storeName of ['constructor', 'toString']) {
+    await t.test(storeName, async () => {
+      await dailyRef.set({ ...originalDaily, activeStores: [storeName], freeStores: [] })
+      const payload = {
+        requestId: `emulator-special-name-${randomBytes(8).toString('hex')}`,
+        items: [{
+          name: 'Emulator Test Meal', price: 120, storeName,
+          ownerName: member.memberName, ownerUid: member.uid, paymentMethod: 'wallet',
+        }],
+      }
+      const created = await callFunction('createOrdersWithWalletDebit', payload, memberToken)
+      assert.equal(created.body?.error, undefined, JSON.stringify(created.body))
+      assert.equal((await walletRef.get()).data().balance, 380)
+      const [orderId] = created.body.result.orderIds
+      const replaced = await callFunction('cancelOrdersWithWalletRefund', {
+        storeReplacement: { source: storeName, target: 'Emulator Test Store' },
+      }, adminToken)
+      assert.equal(replaced.body?.error, undefined, JSON.stringify(replaced.body))
+      assert.equal((await walletRef.get()).data().balance, 500)
+      assert.equal((await db.collection('orders').doc(orderId).get()).exists, false)
+      const dining = (await diningRef.get()).data()
+      assert.equal(Object.hasOwn(dining.replacements, storeName), true)
+      assert.equal(dining.replacements[storeName].target, 'Emulator Test Store')
+
+      const rejected = await callFunction('createOrdersWithWalletDebit', {
+        ...payload, requestId: `emulator-replaced-${randomBytes(8).toString('hex')}`,
+      }, memberToken)
+      assert.equal(rejected.body?.error?.status, 'FAILED_PRECONDITION')
+      assert.equal((await walletRef.get()).data().balance, 500)
+    })
+  }
+})

@@ -460,7 +460,7 @@ const restorePanelPosition = async () => {
 }
 
 const groupedStores = computed(() => {
-  const storeMap = {}
+  const storeMap = Object.create(null)
   rawMenuData.value.forEach(d => {
     const storeName = normalizeStoreName(d.storeName)
     if (!storeName) return

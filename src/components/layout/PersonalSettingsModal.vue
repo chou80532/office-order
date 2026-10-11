@@ -1,16 +1,17 @@
 <script setup>
-import { computed, ref, useId } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import { useAuth } from '../../composables/useAuth'
 import { useFirestore } from '../../composables/useFirestore'
 import { useToast } from '../../composables/useToast'
 import { useModalA11y } from '../../composables/useModalA11y'
 import { disablePush, enablePush, pushAvailable, pushEnabledOnDevice, pushPermission } from '../../services/push'
 import { SUPPORTED_LOCALES, setUserLocale, t, translateError, userLocalePreference } from '../../i18n'
+import { normalizeDietaryPreferences } from '../../utils/dietaryTags'
 
 // 由父元件以 v-if 控制開關，掛載時即為開啟狀態（useModalA11y 依掛載／卸載管理焦點）。
 const emit = defineEmits(['close'])
 
-const { allowProxyOrders, updatePreferences } = useAuth()
+const { allowProxyOrders, dietaryPreferences, updatePreferences } = useAuth()
 const { systemSettings } = useFirestore()
 const { showToast } = useToast()
 const id = useId()
@@ -23,6 +24,31 @@ const savingConsent = ref(false)
 const pushSupported = pushAvailable()
 const pushOn = ref(pushEnabledOnDevice())
 const pushBusy = ref(false)
+const dietaryDraft = ref(normalizeDietaryPreferences(dietaryPreferences?.value))
+const savingDietary = ref(false)
+const dietaryCatalog = computed(() => [...new Set([
+  ...(systemSettings.value.dietary?.tags || []),
+  ...dietaryDraft.value.preferredTags, ...dietaryDraft.value.avoidedTags,
+])])
+watch(() => dietaryPreferences?.value, value => { dietaryDraft.value = normalizeDietaryPreferences(value) })
+
+function toggleDietary(kind, tag, checked) {
+  const other = kind === 'preferredTags' ? 'avoidedTags' : 'preferredTags'
+  dietaryDraft.value[kind] = checked ? [...dietaryDraft.value[kind], tag] : dietaryDraft.value[kind].filter(value => value !== tag)
+  if (checked) dietaryDraft.value[other] = dietaryDraft.value[other].filter(value => value !== tag)
+}
+
+async function saveDietary() {
+  savingDietary.value = true
+  try {
+    await updatePreferences({ dietary: dietaryDraft.value })
+    showToast(t('dietary.saved'), 'success')
+  } catch (error) {
+    showToast(translateError(error, 'nav.personal.saveFailed'), 'error')
+  } finally {
+    savingDietary.value = false
+  }
+}
 
 useModalA11y(dialog, { onEscape: () => emit('close') })
 
@@ -79,6 +105,20 @@ async function togglePush(event) {
                 <option v-for="option in SUPPORTED_LOCALES" :key="option.value" :value="option.value">{{ option.label }}</option>
               </select>
               <p class="sys-hint">{{ t('nav.personal.languageHint') }}</p>
+            </div>
+
+            <div v-if="systemSettings.dietary?.enabled" class="sys-field">
+              <strong class="sys-label">{{ t('dietary.personal') }}</strong>
+              <fieldset v-for="kind in ['preferredTags', 'avoidedTags']" :key="kind" :disabled="savingDietary">
+                <legend class="sys-label">{{ t(kind === 'preferredTags' ? 'dietary.preferred' : 'dietary.avoided') }}</legend>
+                <label v-for="tag in dietaryCatalog" :key="tag" class="sys-choice">
+                  <input type="checkbox" :checked="dietaryDraft[kind].includes(tag)" @change="toggleDietary(kind, tag, $event.target.checked)">
+                  <span>{{ tag }}<small v-if="!systemSettings.dietary.tags.includes(tag)">{{ t('dietary.retired') }}</small></span>
+                </label>
+              </fieldset>
+              <p class="sys-hint">{{ t('dietary.hint') }}</p>
+              <p v-if="!dietaryCatalog.length" class="sys-hint">{{ t('dietary.emptyCatalog') }}</p>
+              <button type="button" class="sys-secondary-btn" :disabled="savingDietary" @click="saveDietary">{{ savingDietary ? t('common.saving') : t('dietary.save') }}</button>
             </div>
 
             <label v-if="showConsent" class="sys-choice">

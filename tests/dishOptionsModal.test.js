@@ -11,10 +11,12 @@ import * as formatHelpers from '../src/utils/format'
 import * as optionHelpers from '../src/utils/dishOptionGroups'
 import * as noteGroupHelpers from '../src/utils/defaultNoteGroups'
 import * as i18nHelpers from '../src/i18n'
+import * as dietaryHelpers from '../src/utils/dietaryTags'
 import { groupDishOptions } from '../src/utils/dishOptions'
 import { menuItemKey } from '../src/utils/menuCategories'
 
 const firestoreMock = { useFirestore: () => ({
+  systemSettings: { value: { dietary: { enabled: false } } },
   noteGroups: { value: [{ label: '甜度', notes: ['半糖', '無糖'] }, { label: '冰量', notes: ['少冰'] }, { label: '溫度', notes: ['熱的'] }] },
   requireQuickNotes() {}, releaseQuickNotes() {},
 }) }
@@ -24,6 +26,7 @@ const { descriptor } = parse(readFileSync(new URL('../src/components/order/DishO
 const compiled = compileScript(descriptor, { id: 'dish-options-test', inlineTemplate: true }).content
 const modules = { vue: Vue, '../../composables/useScrollLock': scrollMock, '../../composables/useFirestore': firestoreMock, '../../utils/menuCategories': menuHelpers, '../../utils/dishOptions': dishHelpers, '../../utils/sizeOrder': sizeHelpers, '../../constants': constants }
 Object.assign(modules, { '../../utils/format': formatHelpers, '../../utils/dishOptionGroups': optionHelpers, '../../utils/defaultNoteGroups': noteGroupHelpers, '../../i18n': i18nHelpers })
+modules['../../utils/dietaryTags'] = dietaryHelpers
 const clientSource = compiled.replace(/import \{([^}]+)\} from ['"]([^'"]+)['"];?/g, (_, bindings, path) => `const {${bindings.replace(/\bas\b/g, ':')}} = modules[${JSON.stringify(path)}];`).replace('export default', 'return')
 const DishOptionsModal = new Function('modules', clientSource)(modules)
 

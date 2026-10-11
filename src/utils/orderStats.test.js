@@ -16,4 +16,16 @@ describe('訂餐統計', () => {
     expect(result.mealMap['甲店・雞腿飯'].count).toBe(1)
     expect(result.mealMap['乙店・雞腿飯'].count).toBe(1)
   })
+  it.each(['__proto__', 'constructor', 'toString'])('姓名與店名 %s 不會撞到內建物件屬性', name => {
+    const result = aggregateOrderStats([
+      { name, storeName: name, meal: 'Example Meal', price: 100, timestamp: 1789185600000 },
+      { name, storeName: name, meal: 'Example Meal', price: 150, timestamp: 1789185600000 },
+    ])
+    expect(Object.keys(result.peopleMap)).toEqual([name])
+    expect(result.peopleMap[name]).toMatchObject({ count: 2, total: 250 })
+    expect(result.peopleMap[name].stores).toEqual(new Set([name]))
+    expect(Object.keys(result.storeMap)).toEqual([name])
+    expect(result.storeMap[name]).toMatchObject({ count: 2, amount: 250 })
+    expect(result.total).toBe(250)
+  })
 })

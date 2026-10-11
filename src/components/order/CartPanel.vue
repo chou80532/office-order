@@ -74,7 +74,7 @@ const currentOwner = computed(() => {
     return {
       name: proxyManual.value.trim(),
       uid: '',
-      paymentMethod: 'cash',
+      paymentMethod: memberPaymentMethod(systemSettings.value, false),
       isManual: true,
       isProxy: true,
       hasAccount: false,

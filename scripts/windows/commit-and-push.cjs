@@ -12,8 +12,9 @@ function run(command, args, options = {}) {
   return spawnSync(command, args, { cwd: root, stdio: 'inherit', windowsHide: true, ...options })
 }
 
+// --no-pager：檔案清單超過一個畫面時，git 會開啟分頁器停在「:」等待按鍵，看起來像卡住。
 function git(...args) {
-  return run('git', ['-c', 'core.quotepath=false', ...args])
+  return run('git', ['--no-pager', '-c', 'core.quotepath=false', ...args])
 }
 
 function gitOutput(...args) {

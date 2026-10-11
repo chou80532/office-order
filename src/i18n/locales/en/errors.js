@@ -1,5 +1,6 @@
 // Messages for Cloud Functions error codes. The backend returns the code as the HttpsError message.
 export default {
+  INVALID_DIETARY_SETTINGS: 'Invalid meal labels. Use up to 30 labels of 24 characters each.',
   generic: 'Something went wrong. Please try again.',
   network: 'The connection is unstable. Check your network and try again.',
   UNAUTHENTICATED: 'Please sign in first.',

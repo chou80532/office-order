@@ -17,6 +17,32 @@ beforeEach(() => {
 })
 afterEach(() => { mounted?.unmount(); vi.unstubAllGlobals() })
 
+it('keeps menu labels through loading, text parsing and saving even with the feature disabled', async () => {
+  const saveAll = vi.fn().mockResolvedValue(true)
+  mounted = mountComponent(SmartMenuEditorModal, {
+    store: { name: 'Example store', menuDocId: 'example-menu', images: [], menuItems: [{ name: 'Example meal', price: 75, tags: ['Vegan', 'Custom;label'] }] },
+    unifiedEditor: true, saveAll,
+  })
+  mounted.state.loadExistingToEditor()
+  expect(mounted.state.textInput).toContain('@tags ["Vegan","Custom;label"]')
+  mounted.state.parseText()
+  expect(mounted.state.parsedItems[0].tags).toEqual(['Vegan', 'Custom;label'])
+  await mounted.state.save()
+  expect(saveAll.mock.calls[0][0][0].tags).toEqual(['Vegan', 'Custom;label'])
+})
+
+it('does not save an old menu when a tag line cannot be parsed', async () => {
+  const saveAll = vi.fn().mockResolvedValue(true)
+  mounted = mountComponent(SmartMenuEditorModal, {
+    store: { name: 'Example store', images: [], menuItems: [{ name: 'Example meal', price: 75 }] },
+    unifiedEditor: true, saveAll,
+  })
+  mounted.state.loadExistingToEditor()
+  mounted.state.textInput += '\n@tags invalid'
+  await mounted.state.save()
+  expect(saveAll).not.toHaveBeenCalled()
+})
+
 it('adds inline batch choices to the selected group and preserves other groups', async () => {
   mounted = mountComponent(SmartMenuEditorModal, {
     store: { name: '原店家', images: [], menuItems: [] }, unifiedEditor: true,

@@ -22,6 +22,14 @@ const stores = [
   { name: '=公式店', category: 'drink', phone: '', address: '', images: [], menuItems: [] },
 ]
 
+it.each(['json', 'csv'])('preserves custom dietary tags in %s round trips', format => {
+  const sample = [{ name: 'Example store', menuItems: [{ name: 'Example meal', price: 75, tags: ['Vegan', 'Comma,label', 'Semi;colon', '=Custom'] }] }]
+  const source = format === 'json' ? buildMenuJson(sample, { currency: 'TWD' }) : buildMenuCsv(sample)
+  const { stores: parsed, errors } = parseMenuFile(source, { fileName: `menu.${format}`, currency: 'TWD', maxPrice: 10000 })
+  expect(errors).toEqual([])
+  expect(parsed[0].menuItems[0].tags).toEqual(sample[0].menuItems[0].tags)
+})
+
 afterEach(() => setAppCurrency('TWD'))
 
 describe('menuTransfer', () => {

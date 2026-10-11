@@ -4,6 +4,12 @@ import { mountComponent } from './helpers/mountComponent'
 import StoreManagerPanel from '../src/components/modals/StoreManagerPanel.vue'
 
 const mocks = vi.hoisted(() => ({ data: null, save: vi.fn(), admin: true }))
+vi.mock('../src/firestore', () => ({ db: {} }))
+vi.mock('firebase/firestore', () => ({
+  doc: (_db, ...parts) => parts.join('/'),
+  getDoc: async () => ({ exists: () => false }),
+  setDoc: vi.fn().mockResolvedValue(undefined),
+}))
 vi.mock('../src/composables/useFirestore', () => ({ useFirestore: () => mocks.data }))
 vi.mock('../src/composables/useAuth', () => ({ useAuth: () => ({ userUid: ref('member'), isAdmin: ref(mocks.admin) }) }))
 vi.mock('../src/services/walletFunctions', () => ({ cancelOrdersWithWalletRefundViaFunction: (...args) => mocks.save(...args) }))
@@ -23,6 +29,14 @@ beforeEach(() => {
 })
 afterEach(() => mounted?.unmount())
 describe('設定店家草稿與交易', () => {
+  it.each(['__proto__', 'constructor', 'toString'])('尚未停用的特殊店名 %s 可正常開放', async name => {
+    mocks.data.todayOrders.value = []
+    mounted = mountComponent(StoreManagerPanel, { allStores: [{ name }] })
+    mounted.state.toggle(name)
+    await mounted.state.save()
+    expect(mocks.save).toHaveBeenCalledOnce()
+    expect(mocks.save.mock.calls[0][0].dailyStoreSettings.activeStores).toEqual(['Old', name])
+  })
   it('取消勾選不會被後續快照勾回，也不恢復已取消的免費設定', async () => {
     const { state } = mount()
     expect(state.selected).toEqual([])

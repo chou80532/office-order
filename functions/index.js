@@ -103,6 +103,12 @@ const normalizeLogoUrl = (value) => {
   return ''
 }
 const isPlainObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+// Keep limits aligned with src/utils/dietaryTags.js.
+const normalizeDietaryTags = value => Array.isArray(value)
+  ? [...new Set(value.filter(tag => typeof tag === 'string').map(tag => tag.trim())
+    .filter(tag => tag && tag.length <= 24))].slice(0, 30) : []
+const validDietaryTags = value => Array.isArray(value) && value.length <= 30
+  && value.every(tag => typeof tag === 'string' && tag.trim().length > 0 && tag.trim().length <= 24)
 const amountOr = (value, fallback, min = 1) =>
   Number.isInteger(value) && value >= min && value <= ABSOLUTE_MAX_AMOUNT ? value : fallback
 
@@ -143,6 +149,7 @@ const normalizeSystemSettings = (data = {}) => {
     ordering: {
       defaultCutoff: TIME_OF_DAY_PATTERN.test(String(data?.ordering?.defaultCutoff || '')) ? data.ordering.defaultCutoff : '',
     },
+    dietary: { enabled: data?.dietary?.enabled === true, tags: normalizeDietaryTags(data?.dietary?.tags) },
   }
 }
 
@@ -236,6 +243,17 @@ const parseSystemSettingsInput = (input, current) => {
     if (ordering.defaultCutoff !== '' && !TIME_OF_DAY_PATTERN.test(String(ordering.defaultCutoff))) fail('INVALID_CUTOFF_TIME')
     next.ordering.defaultCutoff = ordering.defaultCutoff
   }
+  const dietary = section('dietary', 'INVALID_DIETARY_SETTINGS')
+  if (dietary) {
+    if (dietary.enabled !== undefined) {
+      if (typeof dietary.enabled !== 'boolean') fail('INVALID_DIETARY_SETTINGS')
+      next.dietary.enabled = dietary.enabled
+    }
+    if (dietary.tags !== undefined) {
+      if (!validDietaryTags(dietary.tags)) fail('INVALID_DIETARY_SETTINGS')
+      next.dietary.tags = normalizeDietaryTags(dietary.tags)
+    }
+  }
   return next
 }
 
@@ -327,7 +345,14 @@ const diningRef = (timeZone) => db.collection('dining_days').doc(dateKeyInZone(t
 const readDining = async (transaction, timeZone) => {
   const ref = diningRef(timeZone)
   const snap = await transaction.get(ref)
-  return { ref, data: { participants: {}, needs: {}, replacements: {}, ...(snap.exists ? snap.data() : {}) } }
+  const data = snap.exists ? snap.data() : {}
+  // 店名等資料鍵不能命中 Object 的繼承屬性。
+  return { ref, data: {
+    ...data,
+    participants: Object.assign(Object.create(null), data.participants),
+    needs: Object.assign(Object.create(null), data.needs),
+    replacements: Object.assign(Object.create(null), data.replacements),
+  } }
 }
 
 const normalizeMemberName = (value) => String(value || '').trim().replace(/\s+/g, ' ')
@@ -476,7 +501,24 @@ exports.completeDomainRegistration = onCall(async (request) => {
 exports.updateMyPreferences = onCall(async (request) => {
   const uid = requireAuth(request)
   const allowProxyOrders = request.data?.allowProxyOrders
-  if (typeof allowProxyOrders !== 'boolean') throw new HttpsError('invalid-argument', 'INVALID_PREFERENCES')
+  const dietary = request.data?.dietary
+  const hasConsent = allowProxyOrders !== undefined
+  if ((!hasConsent && dietary === undefined) || (hasConsent && typeof allowProxyOrders !== 'boolean')) {
+    throw new HttpsError('invalid-argument', 'INVALID_PREFERENCES')
+  }
+  const patch = hasConsent ? { allowProxyOrders } : {}
+  if (dietary !== undefined) {
+    if (!isPlainObject(dietary) || !validDietaryTags(dietary.preferredTags) || !validDietaryTags(dietary.avoidedTags)) {
+      throw new HttpsError('invalid-argument', 'INVALID_PREFERENCES')
+    }
+    patch.dietary = {
+      preferredTags: normalizeDietaryTags(dietary.preferredTags),
+      avoidedTags: normalizeDietaryTags(dietary.avoidedTags),
+    }
+    if (patch.dietary.preferredTags.some(tag => patch.dietary.avoidedTags.includes(tag))) {
+      throw new HttpsError('invalid-argument', 'INVALID_PREFERENCES')
+    }
+  }
 
   await db.runTransaction(async (transaction) => {
     const userRef = db.collection('users').doc(uid)
@@ -484,14 +526,20 @@ exports.updateMyPreferences = onCall(async (request) => {
     if (!userSnap.exists || userSnap.data().accountDeletionPending) {
       throw new HttpsError('permission-denied', '需要已註冊使用者權限')
     }
-    transaction.update(userRef, { allowProxyOrders })
-    transaction.set(memberRosterRef(uid), {
-      uid,
-      name: normalizeMemberName(userSnap.data().memberName),
-      allowProxyOrders,
+    if (patch.dietary) {
+      const settingsSnap = await transaction.get(systemSettingsRef())
+      const settings = normalizeSystemSettings(settingsSnap.exists ? settingsSnap.data() : {})
+      const chosen = [...patch.dietary.preferredTags, ...patch.dietary.avoidedTags]
+      if (!settings.dietary.enabled || chosen.some(tag => !settings.dietary.tags.includes(tag))) {
+        throw new HttpsError('invalid-argument', 'INVALID_PREFERENCES')
+      }
+    }
+    transaction.update(userRef, patch)
+    if (hasConsent) transaction.set(memberRosterRef(uid), {
+      uid, name: normalizeMemberName(userSnap.data().memberName), allowProxyOrders,
     })
   })
-  return { ok: true, allowProxyOrders }
+  return { ok: true, ...patch }
 })
 
 // 管理員調整「今天」的收單時間：time 為 'HH:MM'、'now'（立即收單）、''（今天不截止）或 null（恢復預設）。

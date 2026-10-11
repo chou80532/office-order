@@ -24,6 +24,7 @@ describe('normalizeSystemSettings', () => {
       retention: { autoDeleteDays: 0 },
       branding: { name: '', logoUrl: '', accent: 'persimmon' },
       ordering: { defaultCutoff: '' },
+      dietary: { enabled: false, tags: [] },
     })
     expect(DEFAULT_SYSTEM_SETTINGS).toEqual(normalizeSystemSettings({}))
   })

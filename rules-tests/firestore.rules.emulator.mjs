@@ -95,6 +95,22 @@ test('registered members can read shared ordering data but not other private pro
   await assertFails(getDocs(collection(db, 'cash_payment_logs')))
 })
 
+test('dietary preferences stay private and menu labels require admin writes', async () => {
+  const dietary = { preferredTags: ['Vegan'], avoidedTags: ['Milk'] }
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'users/alice'), { dietary })
+  })
+  const aliceDb = testEnv.authenticatedContext('alice').firestore()
+  const bobDb = testEnv.authenticatedContext('bob').firestore()
+  const adminDb = testEnv.authenticatedContext('admin').firestore()
+  assert.deepEqual((await assertSucceeds(getDoc(doc(aliceDb, 'users/alice')))).data().dietary, dietary)
+  await assertFails(getDoc(doc(bobDb, 'users/alice')))
+  await assertFails(updateDoc(doc(aliceDb, 'users/alice'), { dietary: { preferredTags: [], avoidedTags: [] } }))
+  await assertFails(updateDoc(doc(aliceDb, 'menu_images/store-a'), { menuItems: [{ name: 'Example meal', price: 100, tags: ['Vegan'] }] }))
+  await assertSucceeds(updateDoc(doc(adminDb, 'menu_images/store-a'), { menuItems: [{ name: 'Example meal', price: 100, tags: ['Vegan'] }] }))
+  assert.equal((await assertSucceeds(getDoc(doc(bobDb, 'member_roster/alice')))).data().dietary, undefined)
+})
+
 test('order writes go through Cloud Functions, never direct Firestore writes', async () => {
   for (const uid of ['alice', 'admin']) {
     const db = testEnv.authenticatedContext(uid).firestore()

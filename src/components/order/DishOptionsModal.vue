@@ -14,6 +14,7 @@ import {
 import { MAX_NOTE_LENGTH, MAX_MEAL_LENGTH } from '../../constants'
 import { DRINK_NOTE_ROLES, noteGroupRole } from '../../utils/defaultNoteGroups'
 import { t } from '../../i18n'
+import { normalizeDietaryTags } from '../../utils/dietaryTags'
 
 const props = defineProps({ context: { type: Object, required: true } })
 const emit = defineEmits(['close', 'save'])
@@ -152,6 +153,10 @@ onUnmounted(() => {
           <button type="button" class="close" autofocus :aria-label="t('dish.options.closeAria')" @click="requestClose()">×</button>
         </header>
         <div class="options-content">
+          <div v-if="systemSettings.dietary?.enabled && selected" class="dietary-detail">
+            <strong>{{ t('dietary.tags') }}: {{ normalizeDietaryTags(selected.tags).join(' · ') || t('dietary.unknown') }}</strong>
+            <p>{{ t('dietary.hint') }}</p>
+          </div>
           <fieldset v-if="variants.length > 1"><legend>{{ t('dish.options.variant') }} <small>{{ t('dish.options.requiredOne') }}</small></legend>
             <div class="option-chips"><button v-for="(variant, i) in variants" :key="menuItemKey(variant)" type="button" :aria-pressed="selectedIndex === i" :class="{ selected: selectedIndex === i }" @click="selectedIndex = i">{{ sizeLabel(variant) || variant.name }} <strong>{{ formatMoney(variant.price) }}{{ variant.unit ? `／${variant.unit}` : '' }}</strong></button></div>
           </fieldset>
@@ -176,7 +181,7 @@ onUnmounted(() => {
             </div>
           </fieldset>
           <fieldset v-if="availableAddons.length || addons.length"><legend>{{ t('dish.options.addons') }} <small>{{ selected?.unit ? t('dish.options.addonsPerItem') : t('dish.options.addonsPerPortion') }}</small></legend>
-            <div class="option-chips"><button v-for="addon in [...availableAddons, ...addons.filter(a => !availableAddons.some(b => addonKey(a) === addonKey(b)))]" :key="addonKey(addon)" type="button" :aria-pressed="hasAddon(addon)" :class="{ selected: hasAddon(addon) }" @click="toggleAddon(addon)">{{ addon.name }} <strong>+{{ formatMoney(addon.price) }}</strong></button></div>
+            <div class="option-chips"><button v-for="addon in [...availableAddons, ...addons.filter(a => !availableAddons.some(b => addonKey(a) === addonKey(b)))]" :key="addonKey(addon)" type="button" :aria-pressed="hasAddon(addon)" :class="{ selected: hasAddon(addon) }" @click="toggleAddon(addon)">{{ addon.name }} <strong>+{{ formatMoney(addon.price) }}</strong><small v-if="systemSettings.dietary?.enabled">{{ normalizeDietaryTags(addon.tags).join(' · ') || t('dietary.unknown') }}</small></button></div>
           </fieldset>
           <fieldset v-for="group in groups" :key="group.label"><legend>{{ group.label }} <small>{{ t('dish.options.optional') }}</small></legend>
             <div class="option-chips"><button v-for="token in group.notes" :key="token" type="button" :aria-pressed="tokens.includes(token)" :class="{ selected: tokens.includes(token) }" @click="toggleNote(token, group)">{{ token }}</button></div>
@@ -192,6 +197,8 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.dietary-detail { font-size: var(--text-label); color: var(--muted); }
+.dietary-detail p { margin: 6px 0; }
 .dish-options { outline: none; inset: 0; margin: auto; box-sizing: border-box; overflow: hidden; padding: 0; width: min(560px, calc(100vw - 24px)); max-height: 88dvh; border: 1px solid var(--border, var(--ink-3)); border-radius: 24px; background: var(--bg-card, var(--ink)); color: var(--text-primary, var(--paper)); box-shadow: 0 24px 80px var(--ink); }
 .dish-options::backdrop { background: color-mix(in srgb, var(--ink) 42%, transparent); }
 .dish-options[open], .dish-options[open]::backdrop { animation: dish-options-in 140ms ease-out both; }

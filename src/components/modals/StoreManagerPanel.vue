@@ -206,7 +206,7 @@ async function save(confirmed = false) {
     emit('show-toast', t('storeManager.needReplacement'), 'error')
     return
   }
-  if (selected.value.some(name => diningDay.value.replacements?.[name])) {
+  if (selected.value.some(name => Object.hasOwn(diningDay.value.replacements || {}, name))) {
     emit('show-toast', t('storeManager.replacedCannotReopen'), 'error')
     return
   }

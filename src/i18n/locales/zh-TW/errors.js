@@ -1,5 +1,6 @@
 // Cloud Functions 錯誤代碼對應的訊息。代碼由後端 HttpsError 的 message 傳回。
 export default {
+  INVALID_DIETARY_SETTINGS: '飲食標籤設定無效，請確認每個標籤不超過 24 字，且總數不超過 30 個。',
   generic: '操作失敗，請再試一次',
   network: '連線不穩定，請確認網路後再試',
   UNAUTHENTICATED: '請先登入',

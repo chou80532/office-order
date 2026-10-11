@@ -48,4 +48,16 @@ describe('店家加入日期', () => {
     state.rawMenuData.value = [{ storeName: '無日期店家', createdAt: null, timestamp: 'invalid' }]
     expect(state.allStores.value[0].createdAtTs).toBeNull()
   })
+  it.each(['__proto__', 'constructor', 'toString'])('店名 %s 可以正常合併菜單圖片與餐點', storeName => {
+    const state = createFirestore()
+    state.rawMenuData.value = [
+      { id: 'image', storeName, url: 'https://example.test/menu.png' },
+      { id: 'menu', storeName, menuItems: [{ name: 'Example Meal', price: 100 }] },
+    ]
+    expect(state.allStores.value).toEqual([expect.objectContaining({
+      name: storeName,
+      images: [{ id: 'image', url: 'https://example.test/menu.png' }],
+      menuItems: [{ name: 'Example Meal', price: 100 }],
+    })])
+  })
 })

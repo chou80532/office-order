@@ -9,7 +9,7 @@ export default {
   fileNameJson: '菜單備份_{date}.json',
   fileNameCsv: '菜單_{date}.csv',
   importTitle: '匯入',
-  importDesc: 'CSV 需要 store、item、price 欄位（可另加 store_category、phone、address、category、unit、options），金額寫 {example} 這樣的主單位。JSON 必須是本系統匯出的檔案且幣別相同。',
+  importDesc: 'CSV 需要 store、item、price 欄位（可另加 store_category、phone、address、category、unit、options、tags），金額寫 {example} 這樣的主單位。tags 可填 JSON 陣列，或以分號分隔標籤。JSON 必須是本系統匯出的檔案且幣別相同。',
   chooseFile: '選擇檔案',
   fileTooLarge: '檔案太大（上限 2MB）',
   readFailed: '無法讀取檔案',

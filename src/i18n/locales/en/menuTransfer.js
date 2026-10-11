@@ -9,7 +9,7 @@ export default {
   fileNameJson: 'menu-backup_{date}.json',
   fileNameCsv: 'menus_{date}.csv',
   importTitle: 'Import',
-  importDesc: 'CSV needs store, item and price columns (optionally store_category, phone, address, category, unit, options), with amounts like {example}. JSON must be a file exported by this app in the same currency.',
+  importDesc: 'CSV needs store, item and price columns (optionally store_category, phone, address, category, unit, options, tags), with amounts like {example}. Tags accept a JSON array or semicolon-separated labels. JSON must be a file exported by this app in the same currency.',
   chooseFile: 'Choose file',
   fileTooLarge: 'The file is too large (max 2 MB)',
   readFailed: 'Could not read the file',

@@ -11,10 +11,11 @@ import { isAddonMenuCategory, normalizeMenuCategory, UNCATEGORIZED_MENU_CATEGORY
 import { parseOptionGroupLine, serializeOptionGroups, stringifyOptionGroups } from './dishOptionGroups'
 import { menuIssues } from './menuEditor'
 import { t } from '../i18n'
+import { normalizeDietaryTags } from './dietaryTags'
 
 export const MENU_EXPORT_FORMAT = 'office-order-menu'
 export const MENU_EXPORT_VERSION = 1
-export const CSV_COLUMNS = ['store', 'store_category', 'phone', 'address', 'category', 'item', 'price', 'unit', 'options']
+export const CSV_COLUMNS = ['store', 'store_category', 'phone', 'address', 'category', 'item', 'price', 'unit', 'options', 'tags']
 export const MAX_IMPORT_STORES = 200
 export const MAX_IMPORT_ITEMS_PER_STORE = 500
 
@@ -24,7 +25,7 @@ const storeCategory = value => (STORE_CATEGORIES.has(String(value || '').trim().
 const isHttpUrl = value => /^https?:\/\/\S+$/i.test(String(value || '').trim())
 
 /** 存進 Firestore 的品項形狀（與菜單編輯器儲存時一致）。 */
-function cleanMenuItem({ category, name, price, unit, options }) {
+function cleanMenuItem({ category, name, price, unit, options, tags }) {
   const normalizedCategory = normalizeMenuCategory(category, UNCATEGORIZED_MENU_CATEGORY)
   const item = {
     type: isAddonMenuCategory(normalizedCategory) ? 'addon' : 'main',
@@ -36,6 +37,8 @@ function cleanMenuItem({ category, name, price, unit, options }) {
   if (cleanUnit) { item.unit = cleanUnit; item.defaultQty = 1 }
   const cleanOptions = serializeOptionGroups(options)
   if (cleanOptions.length) item.options = cleanOptions
+  const cleanTags = normalizeDietaryTags(tags)
+  if (cleanTags.length) item.tags = cleanTags
   return item
 }
 
@@ -48,6 +51,8 @@ const exportItem = item => {
   if (item.unit) result.unit = String(item.unit).trim()
   const options = serializeOptionGroups(item.options)
   if (options.length) result.options = options
+  const tags = normalizeDietaryTags(item.tags)
+  if (tags.length) result.tags = tags
   return result
 }
 
@@ -83,7 +88,7 @@ export function buildMenuCsv(stores) {
   for (const store of stores) {
     const base = [store.name, storeCategory(store.category), store.phone || '', store.address || '']
     const items = store.menuItems || []
-    if (!items.length) rows.push([...base, '', '', '', '', ''])
+    if (!items.length) rows.push([...base, '', '', '', '', '', ''])
     for (const item of items) {
       rows.push([
         ...base,
@@ -92,6 +97,7 @@ export function buildMenuCsv(stores) {
         String(fromMinorUnits(item.price)),
         item.unit || '',
         stringifyOptionGroups(item.options).map(line => line.trim()).join('; '),
+        JSON.stringify(normalizeDietaryTags(item.tags)),
       ])
     }
   }
@@ -172,6 +178,9 @@ function parseJsonMenu(source, { currency, maxPrice }) {
       menuItems: [],
     }
     for (const item of items) {
+      if (item?.tags !== undefined && (!Array.isArray(item.tags) || item.tags.length !== normalizeDietaryTags(item.tags).length)) {
+        errors.push(t('menuTransfer.errors.item', { store: name, item: item?.name || '', message: t('errors.INVALID_DIETARY_SETTINGS') }))
+      }
       const price = Number(item?.price)
       store.menuItems.push(cleanMenuItem({
         category: item?.category,
@@ -179,6 +188,7 @@ function parseJsonMenu(source, { currency, maxPrice }) {
         price: Number.isFinite(price) ? price : '',
         unit: item?.unit,
         options: item?.options,
+        tags: item?.tags,
       }))
     }
     storeMap.set(name, store)
@@ -225,7 +235,17 @@ function parseCsvMenu(source, { maxPrice }) {
       if (group) options.push(group)
       else errors.push(t('menuTransfer.errors.options', { row: line, value: part }))
     }
-    store.menuItems.push(cleanMenuItem({ category: cell(cells, 'category'), name: itemName, price, unit: cell(cells, 'unit'), options }))
+    let tags = []
+    const rawTags = cell(cells, 'tags')
+    if (rawTags) {
+      try {
+        tags = rawTags.startsWith('[') ? JSON.parse(rawTags) : rawTags.split(';').map(tag => tag.trim()).filter(Boolean)
+        if (!Array.isArray(tags) || tags.length !== normalizeDietaryTags(tags).length) throw new Error('Invalid tags')
+      } catch {
+        errors.push(t('menuTransfer.errors.item', { store: name, item: itemName, message: t('errors.INVALID_DIETARY_SETTINGS') }))
+      }
+    }
+    store.menuItems.push(cleanMenuItem({ category: cell(cells, 'category'), name: itemName, price, unit: cell(cells, 'unit'), options, tags }))
   })
   return finishStores(storeMap, errors, maxPrice)
 }

@@ -12,6 +12,18 @@ function setup() {
 }
 
 describe('換店不換人，後端完整交易', () => {
+  it.each(['constructor', 'toString'])('特殊店名 %s 可點餐及換店，只有真的換店後才拒絕新單', async storeName => {
+    const b = setup()
+    b.records.get('settings/daily').activeStores = [storeName]
+    const id = await b.order({ storeName })
+    expect(b.balance()).toBe(900)
+    await b.change(storeName, 'New')
+    expect(b.records.has(`orders/${id}`)).toBe(false)
+    expect(b.balance()).toBe(1000)
+    expect(Object.hasOwn(b.day().replacements, storeName)).toBe(true)
+    expect(b.day().replacements[storeName]).toMatchObject({ target: 'New' })
+    await expect(b.order({ storeName })).rejects.toThrow('店家已更換')
+  })
   it('保留今日用餐人員、原餐點，退款且不影響其他店訂單', async () => {
     const b = setup()
     const old = await b.order({ note: '飯少' })

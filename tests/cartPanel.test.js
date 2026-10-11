@@ -119,6 +119,33 @@ describe('購物車餘額與代訂送出', () => {
     state.settings = { ...state.settings, paymentMethods: { wallet: true, cash: false } }
     expect((await render(true)).html).not.toContain('手動輸入姓名')
   })
+  it.each([
+    [{ wallet: false, cash: false }, 'none'],
+    [{ wallet: true, cash: true }, 'cash'],
+  ])('手動姓名代訂依付款設定建立餐點：%j', (paymentMethods, paymentMethod) => {
+    state.settings = { ...state.settings, paymentMethods }
+    resetPendingCart()
+    vi.stubGlobal('document', { removeEventListener() {} })
+    const updates = []
+    const mounted = mountComponent(CartPanel, {
+      selectedStore: { name: 'Example Store' },
+      initialOwner: { name: 'Guest', uid: '', isProxy: true, isManual: true },
+      'onUpdate-items': items => updates.push(items),
+    })
+    try {
+      mounted.state.manualMeal = 'Example Meal'
+      mounted.state.manualPrice = '100'
+      mounted.state.addManualItem()
+      expect(updates).toEqual([[expect.objectContaining({
+        ownerName: 'Guest', ownerUid: '', paymentMethod, price: 100,
+      })]])
+      expect(state.reads).toEqual([])
+    } finally {
+      mounted.unmount()
+      resetPendingCart()
+      vi.unstubAllGlobals()
+    }
+  })
   it('讀取失敗顯示未知餘額，不誤報 0 元或鎖死送出', async () => {
     state.failRead = true
     const result = await render()

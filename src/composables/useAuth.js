@@ -20,6 +20,7 @@ import {
   updateMyPreferencesViaFunction,
 } from '../services/accountFunctions'
 import { readStorage, removeStorage, writeStorage } from '../utils/storage'
+import { normalizeDietaryPreferences } from '../utils/dietaryTags'
 
 const AUTH_KEY = Symbol('auth')
 const PROFILE_CACHE_KEY = 'cachedAuthProfile'
@@ -63,6 +64,7 @@ export const createAuth = () => {
   const userUid = computed(() => currentUser.value?.uid || '')
   // 成員自己的「允許他人代訂」授權（代訂規則為「需本人同意」時才有作用）。
   const allowProxyOrders = ref(false)
+  const dietaryPreferences = ref(normalizeDietaryPreferences())
   // 已通過 Firebase 驗證、但還不是系統成員的帳號（Google 首次登入、公司信箱待驗證等）。
   const pendingRegistration = ref(null)
 
@@ -80,6 +82,7 @@ export const createAuth = () => {
       userDisplayName.value = data.memberName || user.email?.split('@')[0] || ''
       isAdmin.value = !!data.isAdmin
       allowProxyOrders.value = data.allowProxyOrders === true
+      dietaryPreferences.value = normalizeDietaryPreferences(data.dietary)
       writeCachedProfile(user.uid, userDisplayName.value)
       setDoc(userDocRef, { lastLoginAt: serverTimestamp() }, { merge: true }).catch(() => {})
       return
@@ -117,6 +120,7 @@ export const createAuth = () => {
         const revision = ++authRevision
         window.clearTimeout(initTimeout)
         currentUser.value = user
+        dietaryPreferences.value = normalizeDietaryPreferences()
         profileLoaded.value = false
 
         if (!user) {
@@ -170,6 +174,7 @@ export const createAuth = () => {
         console.error('[Auth] Failed to initialize auth state:', error)
         currentUser.value = null
         isLoggedIn.value = false
+        dietaryPreferences.value = normalizeDietaryPreferences()
         profileLoaded.value = true
         userDisplayName.value = ''
         adminEmail.value = ''
@@ -196,6 +201,7 @@ export const createAuth = () => {
     userDisplayName.value = profile.memberName || user.email?.split('@')[0] || ''
     isAdmin.value = !!profile.isAdmin
     allowProxyOrders.value = profile.allowProxyOrders === true
+    dietaryPreferences.value = normalizeDietaryPreferences(profile.dietary)
     adminEmail.value = user.email || ''
     writeCachedProfile(user.uid, userDisplayName.value)
     pendingRegistration.value = null
@@ -304,8 +310,11 @@ export const createAuth = () => {
   }
 
   const updatePreferences = async (preferences) => {
+    const revision = authRevision
     const result = await updateMyPreferencesViaFunction(preferences)
+    if (revision !== authRevision) return result
     if (typeof result?.allowProxyOrders === 'boolean') allowProxyOrders.value = result.allowProxyOrders
+    if (result?.dietary) dietaryPreferences.value = normalizeDietaryPreferences(result.dietary)
     return result
   }
 
@@ -420,6 +429,7 @@ export const createAuth = () => {
     userUid,
     adminEmail,
     allowProxyOrders,
+    dietaryPreferences,
     pendingRegistration,
     initAuth,
     login,
@@ -459,6 +469,7 @@ export const useAuth = () => {
       userUid: computed(() => ''),
       adminEmail: ref(''),
       allowProxyOrders: ref(false),
+      dietaryPreferences: ref(normalizeDietaryPreferences()),
       pendingRegistration: ref(null),
       auth,
     }

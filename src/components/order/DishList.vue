@@ -5,6 +5,9 @@ import { groupDishOptions } from '../../utils/dishOptions'
 import { normalizeOptionGroups } from '../../utils/dishOptionGroups'
 import { UNCATEGORIZED_MENU_CATEGORY, compareMenuCategory, isAddonMenuItem, menuCategoryLabel, menuItemKey, normalizeMenuCategory } from '../../utils/menuCategories'
 import { t } from '../../i18n'
+import { useAuth } from '../../composables/useAuth'
+import { useFirestore } from '../../composables/useFirestore'
+import { commonDishTags, hasDietaryPreferences, matchesDietaryPreferences, normalizeDietaryTags } from '../../utils/dietaryTags'
 
 const props = defineProps({
   store: { type: Object, default: null },
@@ -15,6 +18,16 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['add'])
+const { dietaryPreferences } = useAuth()
+const { systemSettings } = useFirestore()
+const dietaryEnabled = computed(() => systemSettings?.value?.dietary?.enabled === true)
+const hasPreferences = computed(() => hasDietaryPreferences(dietaryPreferences?.value))
+const filterDietary = ref(true)
+const dietaryActive = computed(() => dietaryEnabled.value && hasPreferences.value && filterDietary.value)
+const matchesItem = item => isVisibleMainItem(item)
+  && (!dietaryActive.value || matchesDietaryPreferences(item, dietaryPreferences?.value))
+const labelsVary = item => !!item._variants && item._variants.some(variant =>
+  normalizeDietaryTags(variant.tags).length !== commonDishTags(item).length)
 
 // 「全部」分頁的內部識別；顯示時才翻譯，避免與店家自訂的分類名稱撞名。
 const ALL_CATEGORY = '__all__'
@@ -83,9 +96,10 @@ const categoryToolbar = ref(null)
 const allMainItems = computed(() => groupDishOptions((props.store?.menuItems || []).filter(isVisibleMainItem)))
 const hasItems = computed(() => allMainItems.value.length > 0)
 const filteredMainItems = computed(() => {
-  if (!props.searchQuery.trim()) return allMainItems.value
+  const items = groupDishOptions((props.store?.menuItems || []).filter(matchesItem))
+  if (!props.searchQuery.trim()) return items
   const q = props.searchQuery.trim().toLowerCase()
-  return allMainItems.value.filter(i => (i._variants || [i]).some(v => itemName(v).toLowerCase().includes(q)))
+  return items.filter(i => (i._variants || [i]).some(v => itemName(v).toLowerCase().includes(q)))
 })
 
 const categoryTabs = computed(() => {
@@ -128,7 +142,7 @@ const globalResults = computed(() => {
   return (props.allStores || [])
     .map(s => {
       const menuItems = s.items || s.menuItems || []
-      const items = groupDishOptions(menuItems.filter(isVisibleMainItem)).filter(i => (i._variants || [i]).some(v => itemName(v).toLowerCase().includes(q)))
+      const items = groupDishOptions(menuItems.filter(matchesItem)).filter(i => (i._variants || [i]).some(v => itemName(v).toLowerCase().includes(q)))
       return {
         name: s.name || s.id,
         groups: groupItemsByCategory(items, uniqueCategoriesInMenuOrder(menuItems.filter(isVisibleMainItem))),
@@ -158,6 +172,10 @@ function openDishImageSearch(item, storeName = '') {
 
 <template>
   <div class="dish-area">
+    <div v-if="dietaryEnabled" class="dietary-toolbar">
+      <label v-if="hasPreferences"><input v-model="filterDietary" type="checkbox"> {{ t('dietary.filter') }}</label>
+      <p>{{ t(hasPreferences ? 'dietary.hint' : 'dietary.configure') }}</p>
+    </div>
     <!--
       數量徽章的液態輪廓只處理裝飾層；數字本身仍是清晰的 HTML。
       filter 跑在 SVG 圖形而不是文字上，避免 blur 影響可讀性。
@@ -180,7 +198,7 @@ function openDishImageSearch(item, storeName = '') {
     <template v-if="isGlobalSearch">
       <div v-if="globalResults.length === 0" class="placeholder">
         <span class="placeholder-icon" aria-hidden="true"><i class="fas fa-magnifying-glass"></i></span>
-        <p>{{ t('dish.noResults', { query: searchQuery }) }}</p>
+        <p>{{ dietaryActive ? t('dietary.noMatches') : t('dish.noResults', { query: searchQuery }) }}</p>
         <p class="sub">{{ t('dish.noResultsManual') }}</p>
       </div>
       <div v-else class="global-results">
@@ -221,6 +239,7 @@ function openDishImageSearch(item, storeName = '') {
                 </Transition>
                 <span v-if="userStatsFor(item, storeGroup.name)?.isLast" class="last-order-corner">{{ t('dish.lastOrdered') }}</span>
                 <span class="card-name">{{ item.name }}</span>
+                <span v-if="dietaryEnabled" class="card-dietary">{{ commonDishTags(item).join(' · ') || t(labelsVary(item) ? 'dietary.varies' : 'dietary.unknown') }}<template v-if="commonDishTags(item).length && labelsVary(item)"> · {{ t('dietary.varies') }}</template></span>
                 <span v-if="optionHint(item)" class="card-options">{{ optionHint(item) }}</span>
                 <div class="card-meta-row">
                   <span class="card-price">
@@ -260,7 +279,7 @@ function openDishImageSearch(item, storeName = '') {
         </div>
         <div v-else-if="categoryGroups.length === 0" class="placeholder">
           <span class="placeholder-icon" aria-hidden="true"><i class="fas fa-magnifying-glass"></i></span>
-          <p>{{ t('dish.noResults', { query: searchQuery }) }}</p>
+          <p>{{ dietaryActive ? t('dietary.noMatches') : t('dish.noResults', { query: searchQuery }) }}</p>
           <p class="sub">{{ t('dish.noResultsClear') }}</p>
         </div>
         <div v-else class="categorized-menu">
@@ -311,6 +330,7 @@ function openDishImageSearch(item, storeName = '') {
                 </Transition>
                 <span v-if="userStatsFor(item)?.isLast" class="last-order-corner">{{ t('dish.lastOrdered') }}</span>
                 <span class="card-name">{{ item.name }}</span>
+                <span v-if="dietaryEnabled" class="card-dietary">{{ commonDishTags(item).join(' · ') || t(labelsVary(item) ? 'dietary.varies' : 'dietary.unknown') }}<template v-if="commonDishTags(item).length && labelsVary(item)"> · {{ t('dietary.varies') }}</template></span>
                 <span v-if="optionHint(item)" class="card-options">{{ optionHint(item) }}</span>
                 <div class="card-meta-row">
                   <span class="card-price">
@@ -339,6 +359,11 @@ function openDishImageSearch(item, storeName = '') {
 </template>
 
 <style scoped>
+.dietary-toolbar { padding: 12px; border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 12px; }
+.dietary-toolbar label { display: flex; align-items: center; gap: 8px; }
+.dietary-toolbar p, .card-dietary { font-size: var(--text-label); color: var(--muted); }
+.dietary-toolbar p { margin: 6px 0 0; }
+.card-dietary { overflow-wrap: anywhere; }
 .dish-area {
   width: 100%;
   min-width: 0;

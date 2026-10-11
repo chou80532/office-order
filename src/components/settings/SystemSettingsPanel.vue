@@ -21,7 +21,8 @@ const clone = settings => normalizeSystemSettings(JSON.parse(JSON.stringify(sett
 const draft = ref(clone(systemSettings.value))
 const saving = ref(false)
 
-const sameSettings = (a, b) => JSON.stringify(normalizeSystemSettings(a)) === JSON.stringify(normalizeSystemSettings(b))
+const sameSettings = (a, b) => JSON.stringify({ ...normalizeSystemSettings(a), dietary: a.dietary })
+  === JSON.stringify({ ...normalizeSystemSettings(b), dietary: b.dietary })
 const dirty = computed(() => !sameSettings(draft.value, systemSettings.value))
 
 // 其他管理員更新設定時，未修改的草稿跟著同步；正在編輯的內容不覆蓋。

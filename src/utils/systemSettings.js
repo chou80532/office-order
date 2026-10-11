@@ -4,6 +4,8 @@
 // 使用相同規則，伺服器端會再驗證一次；兩邊修改時需同步。
 // ==========================================
 
+import { normalizeDietaryTags } from './dietaryTags'
+
 export const DEFAULT_TIME_ZONE = 'Asia/Taipei'
 export const DEFAULT_LOCALE = 'zh-TW'
 export const SUPPORTED_LOCALES = ['zh-TW', 'en']
@@ -119,6 +121,7 @@ export const normalizeSystemSettings = (data = {}) => {
       accent: BRAND_ACCENT_IDS.includes(data?.branding?.accent) ? data.branding.accent : 'persimmon',
     },
     ordering: { defaultCutoff: isTimeOfDay(data?.ordering?.defaultCutoff) ? data.ordering.defaultCutoff : '' },
+    dietary: { enabled: data?.dietary?.enabled === true, tags: normalizeDietaryTags(data?.dietary?.tags) },
   }
 }
 

@@ -74,7 +74,7 @@ export const createFirestore = (_authState = null) => {
   let dailySettingsTimeout = null
   let ordersUnsubscribe = null
   let diningUnsubscribe = null
-  let ordersDateKey = ''
+  let ordersScopeKey = ''
 
   const prepareFirestore = async () => {
     if (db) return
@@ -150,7 +150,7 @@ export const createFirestore = (_authState = null) => {
   })
 
   const allStores = computed(() => {
-    const storeMap = {}
+    const storeMap = Object.create(null)
     rawMenuData.value.forEach(d => {
       const storeName = normalizeStoreName(d.storeName)
       if (!storeName) return
@@ -407,11 +407,14 @@ export const createFirestore = (_authState = null) => {
     if (!listenersRequested || !db) return
 
     const nextDateKey = getLocalDateKey()
-    if (ordersUnsubscribe && ordersDateKey === nextDateKey && !diningError.value) return
+    const { startMs, endMs } = getTodayBounds()
+    // 日期相同時，切換時區仍可能改變訂單的查詢日界。
+    const nextScopeKey = `${nextDateKey}:${startMs}:${endMs}`
+    if (ordersUnsubscribe && ordersScopeKey === nextScopeKey && !diningError.value) return
 
     ordersUnsubscribe?.()
     ordersUnsubscribe = null
-    ordersDateKey = nextDateKey
+    ordersScopeKey = nextScopeKey
     diningUnsubscribe?.()
     diningDay.value = { participants: {}, needs: {}, replacements: {} }
     diningLoading.value = true
@@ -426,7 +429,6 @@ export const createFirestore = (_authState = null) => {
     })
     ordersLoading.value = true
 
-    const { startMs, endMs } = getTodayBounds()
     const ordersQuery = query(
       collection(db, 'orders'),
       where('timestamp', '>=', startMs),
@@ -569,7 +571,7 @@ export const createFirestore = (_authState = null) => {
     dailySettingsTimeout = null
     ordersUnsubscribe?.()
     ordersUnsubscribe = null
-    ordersDateKey = ''
+    ordersScopeKey = ''
     diningUnsubscribe?.()
     diningUnsubscribe = null
     diningDay.value = { participants: {}, needs: {}, replacements: {} }

@@ -157,6 +157,7 @@
               rows="7"
               spellcheck="false"
             ></textarea>
+            <p v-if="dietaryEnabled" class="sme-options-hint">{{ t('dietary.textHint') }}</p>
             <div class="sme-text-actions">
               <button type="button" class="sme-btn sme-btn-secondary" @click="clearTextInput">
                 <i class="fas fa-eraser"></i> {{ t('menuEditor.clear') }}
@@ -245,6 +246,17 @@
                     </td>
                   </tr>
                   <!-- 選項群組編輯：展開才顯示，避免每一列都變高 -->
+                  <tr v-if="dietaryEnabled" class="sme-options-row">
+                    <td colspan="5">
+                      <fieldset class="sme-tags" :aria-label="t('dietary.tagsFor', { name: item.name || t('menuEditor.item') })">
+                        <legend>{{ t('dietary.tags') }}</legend>
+                        <label v-for="tag in tagsForItem(item)" :key="tag">
+                          <input type="checkbox" :checked="item.tags.includes(tag)" @change="toggleTag(item, tag, $event.target.checked)"> {{ tag }}
+                        </label>
+                        <small v-if="!tagsForItem(item).length">{{ t('dietary.emptyCatalog') }}</small>
+                      </fieldset>
+                    </td>
+                  </tr>
                   <tr v-if="expandedOptionsFor === item._editorId" class="sme-options-row">
                     <td colspan="5">
                       <div class="sme-options">
@@ -377,6 +389,7 @@ import {
   parseOptionGroupLine, looksLikeOptionGroupLine, serializeOptionGroups, stringifyOptionGroups,
 } from '../../utils/dishOptionGroups'
 import { useModalA11y } from '../../composables/useModalA11y'
+import { normalizeDietaryTags, stringifyDietaryTags } from '../../utils/dietaryTags'
 
 const props = defineProps({
   store: { type: Object, default: null },
@@ -389,6 +402,11 @@ const emit = defineEmits(['close'])
 const { showToast } = useToast()
 const { getDraft, updateDraft, clearDraft } = useSmartMenuDraft()
 const { systemSettings } = useFirestore()
+const dietaryEnabled = computed(() => systemSettings?.value?.dietary?.enabled === true)
+const tagsForItem = item => [...new Set([...(systemSettings?.value?.dietary?.tags || []), ...normalizeDietaryTags(item.tags)])]
+function toggleTag(item, tag, checked) {
+  item.tags = checked ? normalizeDietaryTags([...item.tags, tag]) : item.tags.filter(value => value !== tag)
+}
 // 價格一律以幣別最小單位存（新台幣為元、美元為分）；文字格式與輸入框用主單位。
 const maxItemPrice = computed(() => systemSettings?.value?.limits?.maxItemPrice || 10_000)
 const plainAmount = value => String(fromMinorUnits(value))
@@ -483,6 +501,7 @@ const createEditorItem = (item) => {
     ...item,
     price: Math.round(Number(item?.price) || 0),
     type: itemType,
+    tags: normalizeDietaryTags(item?.tags),
     category: itemCategory
   }
 }
@@ -498,6 +517,7 @@ const copyAsText = async () => {
     const prefix = isAddonMenuCategory(category) ? '+' : ''
     lines.push(`${prefix}${String(item.name || '').trim()} ${plainAmount(item.price)}${unit ? `/${unit}` : ''}`.trim())
     lines.push(...stringifyOptionGroups(item.options))
+    lines.push(...stringifyDietaryTags(item.tags))
   }
   const text = lines.join('\n')
   try {
@@ -644,6 +664,17 @@ const parseText = () => {
   for (const rawLine of lines) {
     const line = rawLine.trim()
     if (!line || /^[-=\s*#＝]{2,}$/.test(line)) continue
+    if (line.startsWith('@tags ')) {
+      try {
+        const tags = JSON.parse(line.slice(6))
+        if (!result.length || !Array.isArray(tags) || tags.length !== normalizeDietaryTags(tags).length) throw new Error('Invalid tags')
+        result[result.length - 1].tags = normalizeDietaryTags(tags)
+      } catch {
+        showToast(t('errors.INVALID_DIETARY_SETTINGS'), 'error')
+        return
+      }
+      continue
+    }
 
     // 上一行已經建立了品項，而且這行是選項軸 → 掛到那個品項上。
     // 判斷條件有兩個，成立一個就算：有縮排，或行內帶著 `*` `!` `+加價` 這些記號。
@@ -708,7 +739,8 @@ const loadExistingToEditor = () => {
     price: item.price,
     unit: item.unit || '',
     defaultQty: item.unit ? 1 : null,
-    options: serializeOptionGroups(item.options)
+    options: serializeOptionGroups(item.options),
+    tags: normalizeDietaryTags(item.tags)
   }))
 
   // 上面的表格與下面的文字框要是同一份內容，選項軸也得寫回文字框，
@@ -722,6 +754,7 @@ const loadExistingToEditor = () => {
     const pricePart = item.unit ? `${plainAmount(item.price)}/${item.unit}` : plainAmount(item.price)
     lines.push(`${prefix}${item.name} ${pricePart}`)
     lines.push(...stringifyOptionGroups(item.options))
+    lines.push(...stringifyDietaryTags(item.tags))
   }
   textInput.value = lines.join('\n')
   lastParsedText.value = textInput.value
@@ -734,7 +767,10 @@ const loadExistingToEditor = () => {
 
 const save = async () => {
   if (isSaving.value) return
-  if (textInput.value.trim() && textInput.value !== lastParsedText.value) parseText()
+  if (textInput.value.trim() && textInput.value !== lastParsedText.value) {
+    parseText()
+    if (textInput.value !== lastParsedText.value) return
+  }
   if (!isDirty.value && props.saveAll) {
     isSaving.value = true
     try { await props.saveAll(null) } finally { isSaving.value = false }
@@ -756,6 +792,8 @@ const save = async () => {
     if (unit) { clean.unit = unit; clean.defaultQty = 1 }
     const options = serializeOptionGroups(item.options)
     if (options.length) clean.options = options
+    const tags = normalizeDietaryTags(item.tags)
+    if (tags.length) clean.tags = tags
     return clean
   })
   if (cleaned.length === 0) { showToast(t('menuEditor.allNamesEmpty'), 'error'); return }
@@ -826,6 +864,9 @@ onUnmounted(() => { document.removeEventListener('keydown', onKeydown) })
 </script>
 
 <style scoped>
+.sme-tags { display: flex; flex-wrap: wrap; gap: 8px 14px; border: 0; padding: 8px; }
+.sme-tags legend { font-size: var(--text-label); color: var(--muted); }
+.sme-tags label { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-label); }
 /* 格式說明改成收合：熟了之後它只是佔位置，但新店家第一次建菜單需要 */
 .sme-help { margin-bottom:12px; border:1px solid var(--paper-2); border-radius:var(--r-md); background:var(--paper-2); color:var(--ink); overflow:hidden; }
 .sme-help > summary {
